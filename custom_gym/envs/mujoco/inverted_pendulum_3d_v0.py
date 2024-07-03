@@ -118,7 +118,7 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         angle_reward = np.cos(angle)
         
         cart_x, cart_y = observation[0], observation[1]
-        position_penalty = -0.1 * (cart_x**2 + cart_y**2)
+        position_penalty = -0.8 * (cart_x**2 + cart_y**2)
         
         angular_velocity = np.linalg.norm(observation[8:11])
         angular_velocity_penalty = -0.1 * angular_velocity
