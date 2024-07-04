@@ -61,8 +61,10 @@ def test(env, sb3_algo, path_to_model):
         total_reward += reward
         step_count += 1
         
+        cart_x, cart_y = obs[0], obs[1]
+
         # Print step information
-        print(f"Step: {step_count}, Reward: {reward}, Angle: {info.get('angle', 'N/A')}")
+        print(f"Step: {step_count}, Reward: {reward:.4f}, Angle: {info.get('angle', 'N/A'):.4f}, Position: ({cart_x:.4f}, {cart_y:.4f})")
         
         if terminated or truncated:
             extra_steps -= 1
