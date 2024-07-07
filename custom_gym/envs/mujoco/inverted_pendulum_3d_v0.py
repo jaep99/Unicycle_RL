@@ -89,6 +89,7 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         observation_space = Box(low=-np.inf, high=np.inf, shape=(11,), dtype=np.float64)
 
         self._reset_noise_scale = reset_noise_scale
+        self.step_count = 0
 
         MujocoEnv.__init__(
             self,
