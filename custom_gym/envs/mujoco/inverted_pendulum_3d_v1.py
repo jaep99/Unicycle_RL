@@ -22,15 +22,18 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
     This environment is a 3D extension of the classic Inverted Pendulum environment.
     The goal is to balance a pole on a cart that can move linearly in the x-y plane.
 
+    ## V1 version adds perturbation to the previous V0 version.
+    Random forces are applied in each step, following a Gaussian distribution.
+
     ## Action Space
     The agent takes a 2-element vector for actions.
-    The action space is a continuous `(action_x, action_y)` in `[-5, 5]^2`, where `action_x` and `action_y`
+    The action space is a continuous `(action_x, action_y)` in `[-3, 3]^2`, where `action_x` and `action_y`
     represent the numerical force applied to the cart in the x and y directions respectively.
 
     | Num | Action                    | Control Min | Control Max | Name (in corresponding XML file) | Joint | Type (Unit) |
     |-----|---------------------------|-------------|-------------|----------------------------------|-------|-------------|
-    | 0   | Force applied on the cart in x-direction | -5 | 5  | slider_x | slide | Force (N) |
-    | 1   | Force applied on the cart in y-direction | -5 | 5  | slider_y | slide | Force (N) |
+    | 0   | Force applied on the cart in x-direction | -3 | 3  | slider_x | slide | Force (N) |
+    | 1   | Force applied on the cart in y-direction | -3 | 3  | slider_y | slide | Force (N) |
 
     ## Observation Space
     The observation space consists of positional and velocity values of the cart and pole.
@@ -78,6 +81,7 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         frame_skip: int = 2,
         default_camera_config: Dict[str, Union[float, int, np.ndarray]] = DEFAULT_CAMERA_CONFIG,
         reset_noise_scale: float = 0.01,
+        perturbation_scale: float = 0.1,
         **kwargs,
     ):
         if xml_file is None:
@@ -89,7 +93,7 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         observation_space = Box(low=-np.inf, high=np.inf, shape=(11,), dtype=np.float64)
 
         self._reset_noise_scale = reset_noise_scale
-        self.step_count = 0
+        self.perturbation_scale = perturbation_scale
 
         MujocoEnv.__init__(
             self,
@@ -119,9 +123,7 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         angle_reward = np.cos(angle)
         
         cart_x, cart_y = observation[0], observation[1]
-        max_steps = 3000
-        time_factor = min(10.0, self.step_count / max_steps)
-        position_penalty = -time_factor * (cart_x**2 + cart_y**2)
+        position_penalty = -2.0 * (cart_x**2 + cart_y**2)
         
         angular_velocity = np.linalg.norm(observation[8:11])
         angular_velocity_penalty = -0.1 * angular_velocity
@@ -135,7 +137,11 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         return reward
 
     def step(self, action):
-        self.do_simulation(action, self.frame_skip)
+        # Perturbation added
+        random_force = self.np_random.normal(0, self.perturbation_scale, size=2)
+        perturbed_action = action + random_force
+
+        self.do_simulation(perturbed_action, self.frame_skip)
         
         observation = self._get_obs()
         
