@@ -1,3 +1,4 @@
+README.md
 setup.py
 custom_gym/__init__.py
 custom_gym.egg-info/PKG-INFO
@@ -7,4 +8,5 @@ custom_gym.egg-info/requires.txt
 custom_gym.egg-info/top_level.txt
 custom_gym/envs/__init__.py
 custom_gym/envs/mujoco/__init__.py
+custom_gym/envs/mujoco/inverted_double_pendulum_3d_v0.py
 custom_gym/envs/mujoco/inverted_pendulum_3d_v0.py

@@ -11,3 +11,6 @@ setup(
     ],
     python_requires='==3.11.9',
 )
+
+
+# Gymansium version 0.29.1 works

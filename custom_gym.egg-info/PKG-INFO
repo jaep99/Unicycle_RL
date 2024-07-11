@@ -1,6 +1,7 @@
 Metadata-Version: 2.1
 Name: custom_gym
 Version: 0.0.1
+Requires-Python: ==3.11.9
 Requires-Dist: gymnasium
 Requires-Dist: mujoco
 Requires-Dist: stable-baselines3[extra]
