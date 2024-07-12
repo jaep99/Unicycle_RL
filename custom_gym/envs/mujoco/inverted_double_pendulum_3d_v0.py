@@ -22,13 +22,13 @@ class InvertedDoublePendulum3DEnv(MujocoEnv, utils.EzPickle):
 
     ## Action Space
     The agent takes a 2-element vector for actions.
-    The action space is a continuous `(action_x, action_y)` in `[-3, 3]^2`, where `action_x` and `action_y`
+    The action space is a continuous `(action_x, action_y)` in `[-10, 10]^2`, where `action_x` and `action_y`
     represent the numerical force applied to the cart in the x and y directions respectively.
 
     | Num | Action                    | Control Min | Control Max | Name (in corresponding XML file) | Joint | Type (Unit) |
     |-----|---------------------------|-------------|-------------|----------------------------------|-------|-------------|
-    | 0   | Force applied on the cart in x-direction | -3 | 3  | slider_x | slide | Force (N) |
-    | 1   | Force applied on the cart in y-direction | -3 | 3  | slider_y | slide | Force (N) |
+    | 0   | Force applied on the cart in x-direction | -10 | 10  | slider_x | slide | Force (N) |
+    | 1   | Force applied on the cart in y-direction | -10 | 10  | slider_y | slide | Force (N) |
 
     ## Observation Space
     The observation space consists of positional and velocity values of the cart and both poles.
@@ -56,17 +56,8 @@ class InvertedDoublePendulum3DEnv(MujocoEnv, utils.EzPickle):
     | 17  | angular velocity of the second pole about z-axis | -Inf | Inf | ball2 | ball | angular velocity (rad/s) |
 
     ## Rewards
-    The reward is computed as follows:
-    1. A constant survival bonus
-    2. A component based on the cosine of the angles of both poles
-    3. A penalty based on the cart's distance from the origin
-    4. A penalty based on the angular velocities of both poles
-    5. A small penalty based on the action to discourage excessive movement
-
-    The exact formula is:
-    reward = alive_bonus + cos(angle1) + cos(angle2) - 0.1 * (cart_x^2 + cart_y^2) - 0.1 * |angular_velocity| - 0.01 * |action|^2
-
-    Where alive_bonus is set to 10.0.
+    The reward is computed using an exponential function for the cart's distance from the origin,
+    cosine of the angles of both poles, and penalties for angular velocities and actions.
 
     ## Starting State
     The initial position and velocity of the cart and both poles are randomly sampled from a uniform distribution
@@ -78,7 +69,7 @@ class InvertedDoublePendulum3DEnv(MujocoEnv, utils.EzPickle):
     2. The absolute value of the angle of the lower pole (angle1) with respect to vertical exceeds 0.4 radians.
     3. The absolute value of the angle of the upper pole (angle2) with respect to vertical exceeds 0.6 radians.
     4. The cart moves more than 10 units away from the origin in either the x or y direction.
-
+    5. The maximum number of steps is reached.
     """
 
     metadata = {
@@ -95,6 +86,7 @@ class InvertedDoublePendulum3DEnv(MujocoEnv, utils.EzPickle):
         frame_skip: int = 2,
         default_camera_config: Dict[str, Union[float, int, np.ndarray]] = DEFAULT_CAMERA_CONFIG,
         reset_noise_scale: float = 0.01,
+        max_episode_steps: int = 30000,
         **kwargs,
     ):
         if xml_file is None:
@@ -102,10 +94,11 @@ class InvertedDoublePendulum3DEnv(MujocoEnv, utils.EzPickle):
 
         utils.EzPickle.__init__(self, xml_file, frame_skip, reset_noise_scale, **kwargs)
         
-        # 8 DOF
         observation_space = Box(low=-np.inf, high=np.inf, shape=(18,), dtype=np.float64)
 
         self._reset_noise_scale = reset_noise_scale
+        self.max_episode_steps = max_episode_steps
+        self.step_count = 0
 
         MujocoEnv.__init__(
             self,
@@ -125,33 +118,39 @@ class InvertedDoublePendulum3DEnv(MujocoEnv, utils.EzPickle):
             "render_fps": int(np.round(1.0 / self.dt)),
         }
 
-        self.observation_structure = {
-            "qpos": self.data.qpos.size,
-            "qvel": self.data.qvel.size,
-        }
-
     def compute_reward(self, observation, action, angle1, angle2):
-        # Fixed survival bonus
-        survival_bonus = 5.0  
+        # Angle reward (unchanged)
+        angle_reward = 2.0 * (np.cos(angle1)**2 + np.cos(angle2)**2 - 1)
         
-        angle_reward = np.cos(angle1) + np.cos(angle2)
-        
+        # Enhanced position reward
         cart_x, cart_y = observation[0], observation[1]
-        position_penalty = 0.1 * (cart_x**2 + cart_y**2)
+        distance_from_origin = np.sqrt(cart_x**2 + cart_y**2)
+        position_reward = 5.0 * np.exp(-10 * distance_from_origin)  # Increased weight and sharpness
         
+        # Additional reward for being very close to the center
+        center_bonus = 2.0 if distance_from_origin < 0.1 else 0.0
+        
+        # Velocity penalty
+        cart_vx, cart_vy = observation[10], observation[11]
+        velocity = np.sqrt(cart_vx**2 + cart_vy**2)
+        velocity_penalty = -0.1 * velocity
+        
+        # Angular velocity penalty (unchanged)
         angular_velocity = np.linalg.norm(observation[12:18])
-        vel_penalty = 0.1 * angular_velocity
+        angular_velocity_penalty = -0.05 * angular_velocity
         
-        action_penalty = 0.01 * np.sum(np.square(action))
+        # Action penalty (unchanged)
+        action_penalty = -0.005 * np.sum(np.square(action))
         
         # Total reward calculation
-        reward = survival_bonus + angle_reward - position_penalty - vel_penalty - action_penalty
+        reward = angle_reward + position_reward + center_bonus + velocity_penalty + angular_velocity_penalty + action_penalty
         
         return reward, {
-            "survival_bonus": survival_bonus,
             "angle_reward": angle_reward,
-            "posi_penalty": position_penalty,
-            "vel_penalty": vel_penalty,
+            "position_reward": position_reward,
+            "center_bonus": center_bonus,
+            "velocity_penalty": velocity_penalty,
+            "angular_velocity_penalty": angular_velocity_penalty,
             "action_penalty": action_penalty
         }
 
@@ -187,6 +186,10 @@ class InvertedDoublePendulum3DEnv(MujocoEnv, utils.EzPickle):
             (np.abs(observation[1]) > 10)
         )
         
+        # Check if maximum episode length is reached
+        truncated = self.step_count >= self.max_episode_steps
+        self.step_count += 1
+        
         info = {
             "angle1": angle1,
             "angle2": angle2,
@@ -198,9 +201,10 @@ class InvertedDoublePendulum3DEnv(MujocoEnv, utils.EzPickle):
         if self.render_mode == "human":
             self.render()
         
-        return observation, reward, terminated, False, info
+        return observation, reward, terminated, truncated, info
 
     def reset_model(self):
+        self.step_count = 0
         noise_low = -self._reset_noise_scale
         noise_high = self._reset_noise_scale
 
