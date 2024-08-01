@@ -1,7 +1,7 @@
 import mujoco
 import numpy as np
 
-xml_path = "inverted_double_pendulum_3d.xml"
+xml_path = "unicycle_pendulum_3d.xml"
 
 model = mujoco.MjModel.from_xml_path(xml_path)
 data = mujoco.MjData(model)
