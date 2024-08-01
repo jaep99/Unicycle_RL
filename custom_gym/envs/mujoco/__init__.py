@@ -19,3 +19,13 @@ register(
     id='InvertedDoublePendulum3D-v0',
     entry_point='custom_gym.envs.mujoco.inverted_double_pendulum_3d_v0:InvertedDoublePendulum3DEnv',
 )
+
+register(
+    id='PendulumTrajectory-v0',
+    entry_point='custom_gym.envs.mujoco.pendulum_trajectory_v0:PendulumTrajectory',
+)
+
+register(
+    id='UnicyclePendulumBalance-v0',
+    entry_point='custom_gym.envs.mujoco.unicycle_pendulum_v0:UnicyclePendulumBalance',
+)
