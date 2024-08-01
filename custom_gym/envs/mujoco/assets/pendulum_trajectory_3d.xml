@@ -1,0 +1,32 @@
+<mujoco model="3D Inverted Double Pendulum Trajectory">
+    <compiler inertiafromgeom="true"/>
+    <default>
+        <joint armature="0" damping="1" limited="true"/>
+        <geom contype="0" friction="1 0.5 0.5" rgba="0.7 0.7 0 1"/>
+        <tendon/>
+        <motor ctrlrange="-3 3"/>
+    </default>
+    <option gravity="0 0 -9.81" integrator="RK4" timestep="0.005"/>
+    <size nstack="3000"/>
+    <worldbody>
+        <geom name="cart_rail_x" pos="0 0 0" quat="0.707 0 0.707 0" rgba="1 0 0 1" size="0.02 15" type="capsule"/>
+        <geom name="cart_rail_y" pos="0 0 0" quat="0.707 0.707 0 0" rgba="0 1 0 1" size="0.02 15" type="capsule"/>
+        <geom name="x12_plane" pos="13.5 0 0" size="1.5 15 0.001" rgba="1 1 0 0.5" type="box"/>        <body name="cart" pos="0 0 0">
+            <joint axis="1 0 0" limited="true" name="slider_x" pos="0 0 0" range="-15 15" type="slide"/>
+            <joint axis="0 1 0" limited="true" name="slider_y" pos="0 0 0" range="-15 15" type="slide"/>
+            <geom name="cart" pos="0 0 0" quat="0.707 0 0.707 0" size="0.1 0.1" type="capsule"/>
+            <body name="pole1" pos="0 0 0">
+                <joint name="ball1" type="ball" pos="0 0 0" limited="false"/>
+                <geom fromto="0 0 0 0.001 0 0.6" name="cpole1" rgba="0 0.7 0.7 1" size="0.049 0.3" type="capsule"/>
+                <body name="pole2" pos="0.001 0 0.6">
+                    <joint name="ball2" type="ball" pos="0 0 0" limited="false"/>
+                    <geom fromto="0 0 0 0.001 0 0.6" name="cpole2" rgba="0.7 0.7 0.7 1" size="0.049 0.3" type="capsule"/>
+                </body>
+            </body>
+        </body>
+    </worldbody>
+    <actuator>
+        <motor ctrllimited="true" ctrlrange="-2 2" gear="50" joint="slider_x" name="slide_x"/>
+        <motor ctrllimited="true" ctrlrange="-2 2" gear="50" joint="slider_y" name="slide_y"/>
+    </actuator>
+</mujoco>

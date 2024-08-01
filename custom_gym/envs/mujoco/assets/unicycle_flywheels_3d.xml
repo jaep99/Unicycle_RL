@@ -1,0 +1,41 @@
+<mujoco model="Unicycle Flywheels">
+    <asset>
+        <mesh name="wheel" file="UNI_WHEEL.stl" scale="0.01 0.01 0.01"/>
+        <mesh name="frame" file="UNI_FRAME.stl" scale="0.01 0.01 0.01"/>
+    </asset>
+    
+    <worldbody>
+        <geom name="floor_test" pos="0 0 0" size="0.5 0.5 0.01" type="plane" rgba="0 0 0 1"/>
+        <geom name="floor" pos="0 0 0" size="15 15 0.01" type="plane" rgba="0.8 0.8 0.8 1"/>
+        <geom name="floor_goal" pos="13.5 0 0" size="1.5 15 0.01" type="plane" rgba="0 0 1 1"/>
+        <light pos="0 0 100" dir="0 0 -1" castshadow="false"/>
+        <body name="unicycle" pos="0 0 0.266">
+            <joint name="free_joint" type="free"/>
+            <body name="frame">
+                <geom type="mesh" mesh="frame" pos="0 0 0.26" euler="90 0 0" rgba="0 0 0 1"/>
+                <!-- Balancing fly wheel -->
+                <body name="balancing_flywheel" pos="0 0 0.5">
+                    <joint name="flywheel_joint" type="hinge" axis="0 1 0"/>
+                    <geom name="flywheel_geom" type="cylinder" size="0.1 0.02" rgba="1 0 0 0.8" euler="90 0 0"/>
+                </body>
+                <!-- Steering fly wheel -->
+                <body name="steering_flywheel" pos="0 0 0.7">
+                    <joint name="steering_joint" type="hinge" axis="0 0 1"/>
+                    <geom name="steering_geom" type="cylinder" size="0.1 0.02" rgba="0 1 0 0.8"/>
+                </body>
+            </body>
+            <body name="wheel" pos="0 0 0">
+                <joint name="wheel_joint" type="hinge" axis="1 0 0"/>
+                <geom type="mesh" mesh="wheel" pos="0 0 0" euler="90 0 0" rgba="0.8 0.8 0.8 0.6"/>
+                <!-- Visible marker inside the wheel -->
+                <geom name="wheel_marker" type="capsule" size="0.01 0.24" pos="0 0 0" quat="0.707 0.707 0 0" rgba="1 0 0 1"/>
+            </body>
+        </body>
+    </worldbody>
+
+    <actuator>
+        <motor name="wheel_motor" joint="wheel_joint" gear="20" ctrllimited="true" ctrlrange="-1 1"/>
+        <motor name="flywheel_motor" joint="flywheel_joint" gear="10" ctrllimited="true" ctrlrange="-1 1"/>
+        <motor name="steering_motor" joint="steering_joint" gear="10" ctrllimited="true" ctrlrange="-1 1"/>
+    </actuator>
+</mujoco>

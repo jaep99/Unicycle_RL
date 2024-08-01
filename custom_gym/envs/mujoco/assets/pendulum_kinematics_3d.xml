@@ -1,0 +1,21 @@
+<mujoco model="inverted_pendulum_kinematics">
+    <option gravity="0 0 -9.81"/>
+    
+    <worldbody>
+        <light diffuse=".5 .5 .5" pos="0 0 3" dir="0 0 -1"/>
+        <geom name="floor" type="plane" size="5 5 0.1" rgba=".9 .9 .9 1"/>
+        <body name="base" pos="0 0 0.1">
+            <body name="pendulum" pos="0 0 0">
+                <joint name="pendulum_joint" type="ball" damping="0.1"/>
+                <geom name="rod" type="capsule" fromto="0 0 0 0 0 0.5" size="0.02" rgba=".5 .5 .5 1"/>
+                <geom name="mass" type="sphere" pos="0 0 0.5" size="0.05" rgba=".8 .2 .2 1"/>
+            </body>
+        </body>
+    </worldbody>
+
+    <actuator>
+        <motor name="pendulum_motor_x" joint="pendulum_joint" gear="10 0 0" ctrllimited="true" ctrlrange="-1 1"/>
+        <motor name="pendulum_motor_y" joint="pendulum_joint" gear="0 10 0" ctrllimited="true" ctrlrange="-1 1"/>
+    </actuator>
+
+</mujoco>
