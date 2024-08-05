@@ -26,6 +26,6 @@ register(
 )
 
 register(
-    id='UnicyclePendulumBalance-v0',
-    entry_point='custom_gym.envs.mujoco.unicycle_pendulum_v0:UnicyclePendulumBalance',
+    id='UnicycleBalance-v0',
+    entry_point='custom_gym.envs.mujoco.unicycle_balance_v0:UnicycleBalance',
 )

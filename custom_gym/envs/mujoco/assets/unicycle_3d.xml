@@ -3,6 +3,9 @@
         <mesh name="wheel" file="UNI_WHEEL.stl" scale="0.01 0.01 0.01"/>
         <mesh name="frame" file="UNI_FRAME.stl" scale="0.01 0.01 0.01"/>
     </asset>
+
+    <compiler inertiafromgeom="true"/>
+    <option gravity="0 0 -9.81" integrator="RK4" timestep="0.005"/>
     
     <worldbody>
         <geom name="x-axis" pos="0 0 0" quat="0.707 0 0.707 0" rgba="1 0 0 1" size="0.02 15" type="capsule"/>
@@ -29,5 +32,6 @@
 
     <actuator>
         <motor name="wheel_motor" joint="wheel_joint" gear="20" ctrllimited="true" ctrlrange="-1 1"/>
+        <motor name="roll_stabilizer" joint="free_joint" gear="0 0 0 10 0 0" ctrllimited="true" ctrlrange="-1 1"/>
     </actuator>
 </mujoco>
