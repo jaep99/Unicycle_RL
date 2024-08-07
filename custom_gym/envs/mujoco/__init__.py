@@ -29,3 +29,8 @@ register(
     id='UnicycleBalance-v0',
     entry_point='custom_gym.envs.mujoco.unicycle_balance_v0:UnicycleBalance',
 )
+
+register(
+    id='UnicycleTrajectory-v0',
+    entry_point='custom_gym.envs.mujoco.unicycle_trajectory_v0:UnicycleTrajectory',
+)

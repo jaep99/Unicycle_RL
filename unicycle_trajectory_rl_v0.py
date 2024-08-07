@@ -219,7 +219,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Create and wrap the environment
-    gymenv = RewardWrapper(gym.make('UnicycleBalance-v0', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS))
+    gymenv = RewardWrapper(gym.make('UnicycleTrajectory-v0', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS))
 
     if args.train:
         train(gymenv, args.sb3_algo)
@@ -227,7 +227,7 @@ if __name__ == '__main__':
     if args.test:
         if os.path.isfile(args.test):
             # For testing, use render_mode='human'
-            test_env = RewardWrapper(gym.make('UnicycleBalance-v0', render_mode='human', max_episode_steps=MAX_EPISODE_STEPS))
+            test_env = RewardWrapper(gym.make('UnicycleTrajectory-v0', render_mode='human', max_episode_steps=MAX_EPISODE_STEPS))
             test(test_env, args.sb3_algo, path_to_model=args.test)
         else:
             print(f'{args.test} not found.')
