@@ -34,3 +34,8 @@ register(
     id='UnicycleTrajectory-v0',
     entry_point='custom_gym.envs.mujoco.unicycle_trajectory_v0:UnicycleTrajectory',
 )
+
+register(
+    id='UnicycleTurningTrajectory-v0',
+    entry_point='custom_gym.envs.mujoco.unicycle_turning_trajectory_v0:UnicycleTurningTrajectory',
+)
