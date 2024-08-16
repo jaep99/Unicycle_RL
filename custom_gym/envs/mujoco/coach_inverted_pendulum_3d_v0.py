@@ -136,7 +136,10 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         
         return reward
 
-    def step(self, action):
+    def step(self, action, coach_action=None):
+        if coach_action is not None:
+            action += coach_action
+            
         self.do_simulation(action, self.frame_skip)
         self.step_count += 1
 
