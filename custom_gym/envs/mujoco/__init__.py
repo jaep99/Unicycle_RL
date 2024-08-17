@@ -44,3 +44,13 @@ register(
     id='UnicyclePendulumBalance-v0',
     entry_point='custom_gym.envs.mujoco.unicycle_pendulum_balance_3d_v0:UnicyclePendulumBalance',
 )
+
+register(
+    id='UnicyclePendulumTrajectory-v0',
+    entry_point='custom_gym.envs.mujoco.unicycle_pendulum_trajectory_3d_v0:UnicyclePendulumTrajectory',
+)
+
+register(
+    id='UnicyclePendulumTrajectoryCurriculum-v0',
+    entry_point='custom_gym.envs.mujoco.unicycle_pendulum_trajectory_curriculum_3d_v0:UnicyclePendulumTrajectoryCurriculum',
+)
