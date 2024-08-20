@@ -2,17 +2,19 @@
     <asset>
         <mesh name="wheel" file="UNI_WHEEL.stl" scale="0.01 0.01 0.01"/>
         <mesh name="frame" file="UNI_FRAME.stl" scale="0.01 0.01 0.01"/>
+        <texture name="checkerboard" type="2d" builtin="checker" rgb1=".2 .3 .4" rgb2=".3 .4 .5" width="512" height="512"/>
+        <material name="checkerboard" texture="checkerboard" texrepeat="5 5" texuniform="true"/>
     </asset>
 
     <compiler inertiafromgeom="true"/>
     <option gravity="0 0 -9.81" integrator="RK4" timestep="0.005"/>
 
     <worldbody>
-        <geom name="floor" pos="0 0 0" size="12 12 0.01" type="plane" rgba="0.5 0.5 0.5 1"/>
-        <geom name="floor_goal_right" pos="13.5 0 0" size="1.5 15 0.01" type="plane" rgba="0 0 1 1"/>
-        <geom name="floor_goal_left" pos="-13.5 0 0" size="1.5 15 0.01" type="plane" rgba="0 0 1 1"/>
-        <geom name="floor_goal_top" pos="0 13.5 0" size="1.5 15 0.01" type="plane" euler="0 0 90" rgba="0 0 1 1"/>
-        <geom name="floor_goal_bottom" pos="0 -13.5 0" size="1.5 15 0.01" type="plane" euler="0 0 90" rgba="0 0 1 1"/>
+        <geom name="floor" pos="0 0 0" size="12 12 0.01" type="plane" material="checkerboard"/>
+        <geom name="floor_goal_right" pos="13.5 0 0" size="1.5 15 0.01" type="plane" rgba="1 0 0 1"/>
+        <geom name="floor_goal_left" pos="-13.5 0 0" size="1.5 15 0.01" type="plane" rgba="1 0 0 1"/>
+        <geom name="floor_goal_top" pos="0 13.5 0" size="1.5 15 0.01" type="plane" euler="0 0 90" rgba="1 0 0 1"/>
+        <geom name="floor_goal_bottom" pos="0 -13.5 0" size="1.5 15 0.01" type="plane" euler="0 0 90" rgba="1 0 0 1"/>
 
         <light pos="0 0 100" dir="0 0 -1" castshadow="false"/>
         <body name="unicycle" pos="0 0 0.266">
