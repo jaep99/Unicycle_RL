@@ -22,7 +22,7 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
     This environment is a 3D extension of the classic Inverted Pendulum environment.
     The goal is to balance a pole on a cart that can move linearly in the x-y plane.
 
-    ## V2 version adds perturbation to the previous ? version.
+    ## V1 version adds perturbation to the previous V0 version.
     Random forces are applied in each step, following a Gaussian distribution.
 
     ## Action Space
@@ -185,7 +185,7 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         qvel = self.init_qvel + self.np_random.uniform(
             size=self.model.nv, low=noise_low, high=noise_high
         )
-        self.set_state(qpos, qvel)  
+        self.set_state(qpos, qvel)
         return self._get_obs()
 
     def _get_obs(self):
