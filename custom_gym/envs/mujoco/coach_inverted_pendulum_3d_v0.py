@@ -191,3 +191,31 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
 
     def _get_obs(self):
         return np.concatenate([self.data.qpos, self.data.qvel]).ravel()
+    
+
+# Coachagent
+class CoachAgent:
+    def __init__(self, action_space):
+        self.action_space = action_space
+    
+    def select_action(self, student_action, state):
+        # Coach policy: Determine when and how much to intervene
+        # Example heuristic: apply additional torque if angle exceeds threshold
+        angle_threshold = 0.1
+        if np.abs(state[3]) > angle_threshold:  # Assuming state[3] is the angle
+            assist_action = self.action_space.sample() * 0.1  # Small corrective torque
+        else:
+            assist_action = np.zeros_like(student_action)
+        return assist_action
+
+# Wrapper for the environment to include the CoachAgent
+class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
+    def __init__(self, env, coach_agent):
+        super(InvertedPendulum3DEnvWithCoach, self).__init__(env)
+        self.coach_agent = coach_agent
+
+    def step(self, action):
+        state = self.env.state
+        coach_action = self.coach_agent.select_action(action, state)
+        combined_action = action + coach_action  # Combine student and coach actions
+        return self.env.step(combined_action)

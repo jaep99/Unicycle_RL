@@ -26,8 +26,12 @@ def train(env, sb3_algo):
     wrapped_env = InvertedPendulum3DEnvWithCoach(env, coach_agent)
 
     # Create seperated environment for model evaluation added
-    eval_env = gym.make('InvertedPendulum3D-v1', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS)
-    
+    #eval_env = gym.make('InvertedPendulum3D-v1', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS)
+    eval_env = InvertedPendulum3DEnvWithCoach(
+        gym.make('InvertedPendulum3D-v1', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS),
+        coach_agent
+    )
+
     # EvalCallback added
     eval_callback = EvalCallback(eval_env, best_model_save_path=f"{model_dir}/best_{run_name}",
                                  log_path=log_dir, eval_freq=10000,
@@ -54,6 +58,9 @@ def train(env, sb3_algo):
         model.save(f"{model_dir}/{run_name}_{TIMESTEPS*iters}")
 
 def test(env, sb3_algo, path_to_model):
+    coach_agent = CoachAgent(env.action_space)
+    wrapped_env = InvertedPendulum3DEnvWithCoach(env, coach_agent)
+
     match sb3_algo:
         case 'SAC':
             model = SAC.load(path_to_model, env=env)
@@ -65,15 +72,15 @@ def test(env, sb3_algo, path_to_model):
             print('Algorithm not found')
             return
 
-    obs, _ = env.reset()
+    obs, _ = wrapped_env.reset()
     terminated = truncated = False
     total_reward = 0
     step_count = 0
     
     while not (terminated or truncated) and step_count < MAX_EPISODE_STEPS:
         action, _ = model.predict(obs)
-        obs, reward, terminated, truncated, info = env.step(action)
-        env.render()
+        obs, reward, terminated, truncated, info = wrapped_env.step(action)
+        wrapped_env.render()
         
         total_reward += reward
         step_count += 1
