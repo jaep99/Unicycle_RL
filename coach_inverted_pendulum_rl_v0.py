@@ -6,6 +6,12 @@ import custom_gym.envs.mujoco
 from stable_baselines3.common.callbacks import EvalCallback
 import datetime
 
+from custom_gym.envs.mujoco.coach_inverted_pendulum_3d_v0 import(
+    InvertedPendulum3DEnv,
+    CoachAgent,
+    InvertedPendulum3DEnvWithCoach
+)
+
 # Create directories to hold models and logs
 model_dir = "models"
 log_dir = "logs"
@@ -14,6 +20,8 @@ os.makedirs(log_dir, exist_ok=True)
 
 # Max episode steps added
 MAX_EPISODE_STEPS = 30000
+
+
 
 def train(env, sb3_algo):
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -28,7 +36,7 @@ def train(env, sb3_algo):
     # Create seperated environment for model evaluation added
     #eval_env = gym.make('InvertedPendulum3D-v1', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS)
     eval_env = InvertedPendulum3DEnvWithCoach(
-        gym.make('InvertedPendulum3D-v1', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS),
+        gym.make('InvertedPendulum3D-v3', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS),
         coach_agent
     )
 
@@ -102,14 +110,23 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--test', metavar='path_to_model')
     args = parser.parse_args()
 
-    gymenv = gym.make('InvertedPendulum3D-v1', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS)
+    #gymenv = gym.make('InvertedPendulum3DWithCoach-v1', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS)
+    #gymenv = gym.make('InvertedPendulum3DWithCoach-v1', render_mode=None)
+    base_env = gym.make('InvertedPendulum3D-v3', render_mode=None)
+    coach_agent = CoachAgent(base_env.action_space)
+    #gymenv = InvertedPendulum3DEnvWithCoach(base_env, coach_agent, render_mode=None)
+    gymenv = InvertedPendulum3DEnvWithCoach(base_env, coach_agent)
 
     if args.train:
         train(gymenv, args.sb3_algo)
 
     if args.test:
         if os.path.isfile(args.test):
-            gymenv = gym.make('InvertedPendulum3D-v1', render_mode='human', max_episode_steps=MAX_EPISODE_STEPS)
+            #gymenv = gym.make('InvertedPendulum3DWithCoach-v1', render_mode='human', max_episode_steps=MAX_EPISODE_STEPS)
+            #gymenv = gym.make('InvertedPendulum3DWithCoach-v1', render_mode='human')
+            base_env = gym.make('InvertedPendulum3D-v3', render_mode='human')
+            #gymenv = InvertedPendulum3DEnvWithCoach(base_env, coach_agent, render_mode='human')
+            gymenv = InvertedPendulum3DEnvWithCoach(base_env, coach_agent)
             test(gymenv, args.sb3_algo, path_to_model=args.test)
         else:
             print(f'{args.test} not found.')

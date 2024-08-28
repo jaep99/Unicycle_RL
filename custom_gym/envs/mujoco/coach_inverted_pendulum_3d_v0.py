@@ -4,6 +4,7 @@ from typing import Dict, Union
 import numpy as np
 from scipy.spatial.transform import Rotation
 
+import gymnasium as gym
 from gymnasium import utils
 from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium.spaces import Box
@@ -72,6 +73,8 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
             "rgb_array",
             "depth_array",
         ],
+        #"render_fps": 50,
+        
     }
 
     def __init__(
@@ -93,6 +96,7 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         self._reset_noise_scale = reset_noise_scale
         self.step_count = 0  # Initialize step_count here
         self.max_steps = 3000  # Add this line to define max_steps
+        #self.dt = 0.02
 
         MujocoEnv.__init__(
             self,
@@ -103,6 +107,7 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
             **kwargs,
         )
 
+        """
         self.metadata = {
             "render_modes": [
                 "human",
@@ -111,7 +116,14 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
             ],
             "render_fps": int(np.round(1.0 / self.dt)),
         }
+        """
+        # Calculate dt based on the initialized timestep and frame_skip
+        computed_dt = self.model.opt.timestep * frame_skip
+        print('Computed_dt', computed_dt)
 
+        # Update render_fps to match dt
+        self.metadata["render_fps"] = int(np.round(1.0 / computed_dt))
+        print('render_fps', self.metadata["render_fps"])
         self.observation_structure = {
             "qpos": self.data.qpos.size,
             "qvel": self.data.qvel.size,
@@ -198,11 +210,11 @@ class CoachAgent:
     def __init__(self, action_space):
         self.action_space = action_space
     
-    def select_action(self, student_action, state):
+    def select_action(self, student_action, angle):
         # Coach policy: Determine when and how much to intervene
         # Example heuristic: apply additional torque if angle exceeds threshold
         angle_threshold = 0.1
-        if np.abs(state[3]) > angle_threshold:  # Assuming state[3] is the angle
+        if np.abs(angle) > angle_threshold:  # Assuming state[3] is the angle
             assist_action = self.action_space.sample() * 0.1  # Small corrective torque
         else:
             assist_action = np.zeros_like(student_action)
@@ -210,12 +222,48 @@ class CoachAgent:
 
 # Wrapper for the environment to include the CoachAgent
 class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
-    def __init__(self, env, coach_agent):
+    """
+    metadata = {
+        "render_modes": [
+            "human",
+            "rgb_array",
+            "depth_array",
+        ],
+        #"render_fps": 60,
+    }
+    """
+
+    def __init__(self, env, coach_agent, render_mode=None, **kwargs):
         super(InvertedPendulum3DEnvWithCoach, self).__init__(env)
         self.coach_agent = coach_agent
+        #self._render_mode = render_mode
 
     def step(self, action):
+        """
         state = self.env.state
         coach_action = self.coach_agent.select_action(action, state)
         combined_action = action + coach_action  # Combine student and coach actions
         return self.env.step(combined_action)
+        """
+        # Use env.unwrapped to access the base environment
+        observation = self.env.unwrapped._get_obs()
+        
+        # Obtain the quaternion values
+        quat = observation[2:6]
+        quat_xyzw = np.roll(quat, -1)  # Convert to (x, y, z, w)
+        r = Rotation.from_quat(quat_xyzw)
+        angle = r.magnitude()  # Calculate angle using the Rotation object
+        
+        # Use angle
+        coach_action = self.coach_agent.select_action(action, angle)
+        
+        # Perform the environment step with the combined action
+        combined_action = action + coach_action
+        return self.env.step(combined_action)
+    
+    def render(self):
+        return self.env.render()
+        """
+        if self._render_mode:
+            return self.env.render(mode=self._render_mode)
+        """
