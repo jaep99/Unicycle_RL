@@ -92,6 +92,7 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         
         # 5 DOF
         observation_space = Box(low=-np.inf, high=np.inf, shape=(11,), dtype=np.float64)
+        action_space = Box(low=-5, high=5, shape=(2,), dtype=np.float64)
 
         self._reset_noise_scale = reset_noise_scale
         self.step_count = 0  # Initialize step_count here
@@ -144,14 +145,16 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         
         survival_bonus = 0.1
         
-        reward = angle_reward + position_penalty + angular_velocity_penalty + action_penalty + survival_bonus
+        student_reward = angle_reward + position_penalty + angular_velocity_penalty + action_penalty + survival_bonus
         
-        return reward
+        return student_reward
 
-    def step(self, action, coach_action=None):
+    def step(self, action):
+        """
         if coach_action is not None:
             action += coach_action
-            
+        """
+        
         self.do_simulation(action, self.frame_skip)
         self.step_count += 1
 
@@ -170,7 +173,7 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         angle = r.magnitude()
         
         # Reward Calculation
-        reward = self.compute_reward(observation, action, angle)
+        student_reward = self.compute_reward(observation, action, angle)
         
         # Terminate if angle > 0.4 radian or goes beyond spaces
         terminated = bool(
@@ -185,7 +188,7 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         if self.render_mode == "human":
             self.render()
         
-        return observation, reward, terminated, False, info
+        return observation, student_reward, terminated, False, info
 
     def reset_model(self):
         self.step_count = 0
@@ -205,65 +208,27 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         return np.concatenate([self.data.qpos, self.data.qvel]).ravel()
     
 
-# Coachagent
-class CoachAgent:
-    def __init__(self, action_space):
-        self.action_space = action_space
+
     
-    def select_action(self, student_action, angle):
-        # Coach policy: Determine when and how much to intervene
-        # Example heuristic: apply additional torque if angle exceeds threshold
+    """
+    def compute_coach_reward(self, angle, student_action, combined_action):
+        # Reward function for the coach based on student performance
         angle_threshold = 0.1
-        if np.abs(angle) > angle_threshold:  # Assuming state[3] is the angle
-            assist_action = self.action_space.sample() * 0.1  # Small corrective torque
+        intervention_penalty = -0.1  # Penalty for unnecessary interventions
+        intervention_reward = 0.2    # Reward for necessary interventions
+        
+        reward = 0
+        
+        # If intervention was necessary (based on angle)
+        if np.abs(angle) > angle_threshold:
+            if not np.array_equal(combined_action, student_action):
+                reward += intervention_reward  # Reward for helping
         else:
-            assist_action = np.zeros_like(student_action)
-        return assist_action
+            if not np.array_equal(combined_action, student_action):
+                reward += intervention_penalty  # Penalty for unnecessary help
 
-# Wrapper for the environment to include the CoachAgent
-class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
-    """
-    metadata = {
-        "render_modes": [
-            "human",
-            "rgb_array",
-            "depth_array",
-        ],
-        #"render_fps": 60,
-    }
+        # Optionally: additional rewards or penalties
+        # E.g., negative reward if pole falls
+        return reward
     """
 
-    def __init__(self, env, coach_agent, render_mode=None, **kwargs):
-        super(InvertedPendulum3DEnvWithCoach, self).__init__(env)
-        self.coach_agent = coach_agent
-        #self._render_mode = render_mode
-
-    def step(self, action):
-        """
-        state = self.env.state
-        coach_action = self.coach_agent.select_action(action, state)
-        combined_action = action + coach_action  # Combine student and coach actions
-        return self.env.step(combined_action)
-        """
-        # Use env.unwrapped to access the base environment
-        observation = self.env.unwrapped._get_obs()
-        
-        # Obtain the quaternion values
-        quat = observation[2:6]
-        quat_xyzw = np.roll(quat, -1)  # Convert to (x, y, z, w)
-        r = Rotation.from_quat(quat_xyzw)
-        angle = r.magnitude()  # Calculate angle using the Rotation object
-        
-        # Use angle
-        coach_action = self.coach_agent.select_action(action, angle)
-        
-        # Perform the environment step with the combined action
-        combined_action = action + coach_action
-        return self.env.step(combined_action)
-    
-    def render(self):
-        return self.env.render()
-        """
-        if self._render_mode:
-            return self.env.render(mode=self._render_mode)
-        """
