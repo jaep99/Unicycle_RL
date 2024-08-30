@@ -13,13 +13,13 @@ os.makedirs(model_dir, exist_ok=True)
 os.makedirs(log_dir, exist_ok=True)
 
 # Max episode steps added
-MAX_EPISODE_STEPS = 30000
+MAX_EPISODE_STEPS = 1000
 
 def train(env, sb3_algo):
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     run_name = f"{sb3_algo}_{timestamp}"
 
-    # Create seperated environment for model evaluation added
+    # Create separated environment for model evaluation
     eval_env = gym.make('InvertedPendulum3D-v1', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS)
     
     # EvalCallback added
@@ -38,14 +38,19 @@ def train(env, sb3_algo):
             print('Algorithm not found')
             return
 
-    TIMESTEPS = 100000 
-    iters = 0
-    while True:
-        iters += 1
-        
+    TIMESTEPS = 10000 
+    total_timesteps = 0
+    max_timesteps = 500000
+
+    while total_timesteps < max_timesteps:
         # eval_callback added
         model.learn(total_timesteps=TIMESTEPS, reset_num_timesteps=False, tb_log_name=run_name, callback=eval_callback)
-        model.save(f"{model_dir}/{run_name}_{TIMESTEPS*iters}")
+        model.save(f"{model_dir}/{run_name}_{total_timesteps}")
+        
+        total_timesteps += TIMESTEPS
+        print(f"Total timesteps: {total_timesteps}")
+
+    print("Training completed after reaching 500,000 timesteps.")
 
 def test(env, sb3_algo, path_to_model):
     match sb3_algo:
