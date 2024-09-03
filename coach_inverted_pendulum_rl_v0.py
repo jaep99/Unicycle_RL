@@ -1,6 +1,8 @@
 import gymnasium as gym
 from gymnasium import spaces
 from gymnasium.spaces import Dict, Box
+from gymnasium import Env
+from gymnasium.wrappers import CompatibleWrapper
 from stable_baselines3 import SAC, TD3, A2C
 import os
 import argparse
@@ -26,7 +28,7 @@ class CoachAgent:
         # Define a combined space that concatenates observation and action
         low = np.concatenate([observation_space.low, action_space.low])
         high = np.concatenate([observation_space.high, action_space.high])
-        combined_space = Box(low=low, high=high, dtype=np.float32)
+        combined_space = gym.spaces.Box(low=low, high=high, dtype=np.float32)
 
         # Initialize SAC with the combined space
         self.model = SAC('MlpPolicy', combined_space, verbose=1, device='cpu')
