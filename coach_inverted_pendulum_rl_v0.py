@@ -1,6 +1,6 @@
-import gym
-from gym import spaces
-from gym.spaces import Dict, Box
+import gymnasium as gym
+from gymnasium import spaces
+from gymnasium.spaces import Dict, Box
 from stable_baselines3 import SAC, TD3, A2C
 import os
 import argparse
