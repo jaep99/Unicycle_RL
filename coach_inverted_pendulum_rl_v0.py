@@ -2,8 +2,9 @@ import gymnasium as gym
 from gymnasium import spaces
 from gymnasium.spaces import Dict, Box
 from gymnasium import Env
-from gymnasium.wrappers import CompatibleWrapper
+from gymnasium.wrappers import EnvCompatibility
 from stable_baselines3 import SAC, TD3, A2C
+from stable_baselines3.common.env_checker import check_env
 import os
 import argparse
 import custom_gym.envs.mujoco
@@ -220,6 +221,8 @@ if __name__ == '__main__':
     #gymenv = gym.make('InvertedPendulum3DWithCoach-v1', render_mode=None)
     base_env = gym.make('InvertedPendulum3D-v3', render_mode=None)
 
+    base_env = EnvCompatibility(base_env)
+    check_env(base_env)
     # Define observation and action spaces for the coach
     observation_space = base_env.observation_space
     action_space = base_env.action_space

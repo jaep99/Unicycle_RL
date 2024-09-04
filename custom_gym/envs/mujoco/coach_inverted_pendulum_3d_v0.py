@@ -132,7 +132,7 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         }
 
     # Reward algorithms
-    def compute_reward(self, observation, action, angle):
+    def calculate_reward(self, observation, action, angle):
         angle_reward = np.cos(angle)
         
         cart_x, cart_y = observation[0], observation[1]
@@ -174,7 +174,7 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         angle = r.magnitude()
         
         # Reward Calculation
-        student_reward = self.compute_reward(observation, action, angle)
+        student_reward = self.calculate_reward(observation, action, angle)
         
         # Terminate if angle > 0.4 radian or goes beyond spaces
         terminated = bool(
