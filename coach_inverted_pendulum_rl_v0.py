@@ -9,8 +9,12 @@ import os
 import argparse
 import custom_gym.envs.mujoco
 from stable_baselines3.common.callbacks import EvalCallback
+from stable_baselines3.common.logger import configure
 import datetime
 import numpy as np
+import matplotlib.pyplot as plt
+import numpy as np
+import json
 
 """
 from custom_gym.envs.mujoco.coach_inverted_pendulum_3d_v0 import(
@@ -19,7 +23,7 @@ from custom_gym.envs.mujoco.coach_inverted_pendulum_3d_v0 import(
     InvertedPendulum3DEnvWithCoach
 )
 """
-
+"""
 # Coachagent
 class CoachAgent:
     def __init__(self, observation_space, action_space):
@@ -42,6 +46,23 @@ class CoachAgent:
     
     def train(self, total_timesteps=10000):
         self.model.learn(total_timesteps=total_timesteps)
+"""
+class CoachAgent:
+    def __init__(self, env):
+        self.env = env  # Store the environment
+        
+        # Initialize SAC with the environment instead of spaces
+        self.model = SAC('MlpPolicy', env, verbose=1, device='cpu')
+    
+    def select_action(self, observation, student_action):
+        # Concatenate the observation and student action
+        #coach_observation = np.concatenate([observation, student_action])
+        action, _ = self.model.predict(observation, deterministic=True)
+        return action
+    
+    def train(self, total_timesteps=10000):
+        self.model.learn(total_timesteps=total_timesteps)
+
 
 
 # Wrapper for the environment to include the CoachAgent
@@ -63,6 +84,7 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         self._render_mode = render_mode
         self.current_episode_reward = 0  # Track the student's current episode reward
         self.previous_episode_reward = None  # Track the student's previous episode reward
+        self.coach_rewards =[] # Store coach rewards
 
     def step(self, action):
         """
@@ -80,12 +102,13 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         
         # Perform the environment step with the combined action
         combined_action = action + coach_action
-        observation, student_reward, terminated, truncated, info = self.env.step(combined_action)
+        next_observation, student_reward, terminated, truncated, info = self.env.step(combined_action)
+        done = terminated
         
         # Update the student's current episode cumulative reward
         self.current_episode_reward += student_reward
         
-        if terminated or truncated:
+        if terminated:
             # Calculate coach's reward based on student's improvement
             if self.previous_episode_reward is not None:
                 improvement = self.current_episode_reward - self.previous_episode_reward
@@ -93,14 +116,24 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
             else:
                 coach_reward = 0  # No reward for the first episode
 
+            # Log coach reward for plotting
+            self.coach_rewards.append(coach_reward)
+
             # Log the coach reward and train the coach
-            self.coach_agent.model.replay_buffer.add(np.concatenate([observation, combined_action]), coach_reward)
-            
+            self.coach_agent.model.replay_buffer.add(
+                observation, # Current observation
+                next_observation, # Newly captured observation
+                combined_action, # Combined action
+                np.array([coach_reward]), # Coach reward
+                np.array([done]), # Episode termination status
+                [info] # Additional info
+            )
+
             # Update the previous episode reward
             self.previous_episode_reward = self.current_episode_reward
             self.current_episode_reward = 0  # Reset for the next episode
         
-        return observation, student_reward, terminated, truncated, info
+        return observation, student_reward, terminated, False, info
     
     def render(self):
         return self.env.render()
@@ -129,10 +162,14 @@ def train(env, sb3_algo):
     action_space = base_env.action_space
 
     # Create a coach agent
-    coach_agent = CoachAgent(observation_space, action_space)
+    coach_agent = CoachAgent(base_env)
 
     # Wrap the environment with the coach
     wrapped_env = InvertedPendulum3DEnvWithCoach(env, coach_agent)
+
+    # TensorBoard logging for custom rewards
+    log_dir = f"logs/{run_name}_coach"
+    logger = configure(log_dir, ["tensorboard"])
 
     # Create seperated environment for model evaluation added
     #eval_env = gym.make('InvertedPendulum3D-v1', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS)
@@ -159,6 +196,8 @@ def train(env, sb3_algo):
 
     TIMESTEPS = 100000 
     iters = 0
+    
+
     while True:
         iters += 1
         
@@ -169,6 +208,23 @@ def train(env, sb3_algo):
         coach_agent.train(total_timesteps=TIMESTEPS)
         
         model.save(f"{model_dir}/{run_name}_{TIMESTEPS*iters}")
+
+        # Log coach rewards to TensorBoard
+        if wrapped_env.coach_rewards:  
+            coach_reward = wrapped_env.coach_rewards[-1]
+            logger.record("coach/episode_reward", coach_reward)
+
+        # Log student rewards to TensorBoard
+        if wrapped_env.current_episode_reward is not None: 
+            student_reward = wrapped_env.current_episode_reward
+            logger.record("student/episode_reward", student_reward)
+
+        logger.dump(step=iters * TIMESTEPS)
+    
+    logger.close()
+    
+   
+
 
 def test(env, sb3_algo, path_to_model):
     observation_space = env.observation_space
@@ -221,7 +277,7 @@ if __name__ == '__main__':
     #gymenv = gym.make('InvertedPendulum3DWithCoach-v1', render_mode=None)
     base_env = gym.make('InvertedPendulum3D-v3', render_mode=None)
 
-    base_env = EnvCompatibility(base_env)
+    #base_env = EnvCompatibility(base_env)
     check_env(base_env)
     # Define observation and action spaces for the coach
     observation_space = base_env.observation_space
@@ -229,7 +285,7 @@ if __name__ == '__main__':
 
 
     # Create a coach agent
-    coach_agent = CoachAgent(observation_space, action_space)
+    coach_agent = CoachAgent(base_env)
 
     # Wrap the environment with the coach
     #gymenv = InvertedPendulum3DEnvWithCoach(base_env, coach_agent, render_mode=None)

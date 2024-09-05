@@ -93,7 +93,7 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         
         # 5 DOF
         observation_space = Box(low=-np.inf, high=np.inf, shape=(11,), dtype=np.float64)
-        action_space = Box(low=-5, high=5, shape=(2,), dtype=np.float64)
+        action_space = Box(low=-1, high=1, shape=(2,), dtype=np.float64)
 
         self._reset_noise_scale = reset_noise_scale
         self.step_count = 0  # Initialize step_count here
@@ -131,6 +131,12 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
             "qvel": self.data.qvel.size,
         }
 
+    
+    def seed(self, seed=None):
+        self._np_random, seed = gym.utils.seeding.np_random(seed)
+        return [seed]
+    
+
     # Reward algorithms
     def calculate_reward(self, observation, action, angle):
         angle_reward = np.cos(angle)
@@ -155,8 +161,8 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         if coach_action is not None:
             action += coach_action
         """
-        
-        self.do_simulation(action, self.frame_skip)
+        scaled_action = action * 5
+        self.do_simulation(scaled_action, self.frame_skip)
         self.step_count += 1
 
         observation = self._get_obs()
@@ -184,13 +190,26 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
             (np.abs(observation[1]) > 5)
         )
         
+        # Limit on number of steps
+        #truncated = self.step_count >= self.max_steps
+
+        #done = terminated or truncated
+
         info = {"angle": angle}
         
         if self.render_mode == "human":
             self.render()
         
         return observation, student_reward, terminated, False, info
+        
 
+    def reset(self, seed=None, options=None):
+        # Reset the environment. Returns only the observation for SB3 compatibility
+        super().reset(seed=seed)  # Seeding the environment if needed
+        obs = self.reset_model()  # Reset the model
+        info = {}
+        return obs, info  # Return only the observation
+    
     def reset_model(self):
         self.step_count = 0
         noise_low = -self._reset_noise_scale
