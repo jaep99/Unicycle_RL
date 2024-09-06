@@ -8,13 +8,11 @@ from gymnasium import utils
 from gymnasium.envs.mujoco import MujocoEnv
 from gymnasium.spaces import Box
 
-
 DEFAULT_CAMERA_CONFIG = {
     "trackbodyid": 0,
     "distance": 3.0,
     "lookat": np.array((0.0, 0.0, 0.6)),
 }
-
 
 class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
     """
@@ -81,7 +79,6 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         frame_skip: int = 2,
         default_camera_config: Dict[str, Union[float, int, np.ndarray]] = DEFAULT_CAMERA_CONFIG,
         reset_noise_scale: float = 0.01,
-        perturbation_scale: float = 0.1,
         **kwargs,
     ):
         if xml_file is None:
@@ -89,11 +86,9 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
 
         utils.EzPickle.__init__(self, xml_file, frame_skip, reset_noise_scale, **kwargs)
         
-        # 5 DOF
         observation_space = Box(low=-np.inf, high=np.inf, shape=(11,), dtype=np.float64)
 
         self._reset_noise_scale = reset_noise_scale
-        self.perturbation_scale = perturbation_scale
 
         MujocoEnv.__init__(
             self,
@@ -118,7 +113,6 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
             "qvel": self.data.qvel.size,
         }
 
-    # Reward algorithms
     def compute_reward(self, observation, action, angle):
         angle_reward = np.cos(angle)
         
@@ -137,30 +131,17 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         return reward
 
     def step(self, action):
-        # Perturbation added
-        random_force = self.np_random.normal(0, self.perturbation_scale, size=2)
-        perturbed_action = action + random_force
-
-        self.do_simulation(perturbed_action, self.frame_skip)
+        self.do_simulation(action, self.frame_skip)
         
         observation = self._get_obs()
         
-        # Obtaining quaternion values from the observation (w, x, y, z)
         quat = observation[2:6]
-        
-        # Transformation for "scipy" (x, y, z, w)
         quat_xyzw = np.roll(quat, -1)
-        
-        # Quaternion to Euler
         r = Rotation.from_quat(quat_xyzw)
-        
-        # Radian Conversion
         angle = r.magnitude()
         
-        # Reward Calculation
         reward = self.compute_reward(observation, action, angle)
         
-        # Terminate if angle > 0.4 radian or goes beyond spaces
         terminated = bool(
             not np.isfinite(observation).all() or 
             (angle > 0.4) or 

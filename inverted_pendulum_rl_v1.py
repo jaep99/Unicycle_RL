@@ -5,6 +5,7 @@ import argparse
 import custom_gym.envs.mujoco
 from stable_baselines3.common.callbacks import EvalCallback
 import datetime
+import numpy as np
 
 # Create directories to hold models and logs
 model_dir = "models"
@@ -13,7 +14,7 @@ os.makedirs(model_dir, exist_ok=True)
 os.makedirs(log_dir, exist_ok=True)
 
 # Max episode steps added
-MAX_EPISODE_STEPS = 1000
+MAX_EPISODE_STEPS = 10000
 
 def train(env, sb3_algo):
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -52,7 +53,7 @@ def train(env, sb3_algo):
 
     print("Training completed after reaching 500,000 timesteps.")
 
-def test(env, sb3_algo, path_to_model):
+def test(env, sb3_algo, path_to_model, num_episodes=30):
     match sb3_algo:
         case 'SAC':
             model = SAC.load(path_to_model, env=env)
@@ -64,34 +65,47 @@ def test(env, sb3_algo, path_to_model):
             print('Algorithm not found')
             return
 
-    obs, _ = env.reset()
-    terminated = truncated = False
-    total_reward = 0
-    step_count = 0
-    
-    while not (terminated or truncated) and step_count < MAX_EPISODE_STEPS:
-        action, _ = model.predict(obs)
-        obs, reward, terminated, truncated, info = env.step(action)
-        env.render()
-        
-        total_reward += reward
-        step_count += 1
-        
-        cart_x, cart_y = obs[0], obs[1]
+    episode_rewards = []
+    episode_lengths = []
 
-        # Print step information
-        print(f"Step: {step_count}, Reward: {reward:.4f}, Angle: {info.get('angle', 'N/A'):.4f}, Position: ({cart_x:.4f}, {cart_y:.4f})")
-        
-    print(f"\nEpisode finished after {step_count} steps")
-    print(f"Total reward: {total_reward}")
-    print(f"Average reward per step: {total_reward / step_count}")
+    for episode in range(num_episodes):
+        obs, _ = env.reset()
+        terminated = truncated = False
+        total_reward = 0
+        step_count = 0
+
+        print(f"\nEpisode {episode + 1}")
+
+        while not (terminated or truncated) and step_count < MAX_EPISODE_STEPS:
+            action, _ = model.predict(obs)
+            obs, reward, terminated, truncated, info = env.step(action)
+            env.render()
+
+            total_reward += reward
+            step_count += 1
+
+            if step_count % 1000 == 0:  # Print info every 1000 steps
+                cart_x, cart_y = obs[0], obs[1]
+                print(f"Step: {step_count}, Reward: {reward:.4f}, Angle: {info.get('angle', 'N/A'):.4f}, Position: ({cart_x:.4f}, {cart_y:.4f})")
+
+        episode_rewards.append(total_reward)
+        episode_lengths.append(step_count)
+
+        print(f"Episode {episode + 1} finished after {step_count} steps")
+        print(f"Total reward: {total_reward}")
+        print(f"Average reward per step: {total_reward / step_count}")
+
+    print("\nTest Summary:")
+    print(f"Average episode reward: {np.mean(episode_rewards):.2f} ± {np.std(episode_rewards):.2f}")
+    print(f"Average episode length: {np.mean(episode_lengths):.2f} ± {np.std(episode_lengths):.2f}")
+    print(f"Number of episodes reaching max steps: {sum([1 for length in episode_lengths if length == MAX_EPISODE_STEPS])}")
 
 if __name__ == '__main__':
     # Parse command line inputs
     parser = argparse.ArgumentParser(description='Train or test model.')
     parser.add_argument('sb3_algo', help='StableBaseline3 RL algorithm i.e. SAC, TD3')
-    parser.add_argument('-t', '--train', action='store_true')
-    parser.add_argument('-s', '--test', metavar='path_to_model')
+    parser.add_argument('-train', '--train', action='store_true')
+    parser.add_argument('-test', '--test', metavar='path_to_model')
     args = parser.parse_args()
 
     gymenv = gym.make('InvertedPendulum3D-v1', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS)
