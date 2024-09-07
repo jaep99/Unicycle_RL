@@ -14,7 +14,7 @@ os.makedirs(model_dir, exist_ok=True)
 os.makedirs(log_dir, exist_ok=True)
 
 # Max episode steps added
-MAX_EPISODE_STEPS = 300
+MAX_EPISODE_STEPS = 3000
 
 def train(env, sb3_algo):
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -39,9 +39,9 @@ def train(env, sb3_algo):
             print('Algorithm not found')
             return
 
-    TIMESTEPS = 3000 
+    TIMESTEPS = 3000
     total_timesteps = 0
-    max_timesteps = 90000
+    max_timesteps = 3000 * 100 # 3000 steps * 100 iterations
 
     while total_timesteps < max_timesteps:
         # eval_callback added
@@ -51,7 +51,7 @@ def train(env, sb3_algo):
         total_timesteps += TIMESTEPS
         print(f"Total timesteps: {total_timesteps}")
 
-    print("Training completed after reaching 90,000 timesteps.")
+    print("Training completed after reaching 300,000 timesteps.")
 
 def test(env, sb3_algo, path_to_model, num_episodes=30):
     match sb3_algo:
