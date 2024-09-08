@@ -72,8 +72,11 @@ class InvertedPendulum3DWithCoach(MujocoEnv, utils.EzPickle):
     """
 
     metadata = {
-        "render_modes": ["human", "rgb_array", "depth_array"],
-        "render_fps": 100,
+        "render_modes": [
+            "human",
+            "rgb_array",
+            "depth_array",
+        ],
     }
 
     def __init__(
@@ -81,7 +84,7 @@ class InvertedPendulum3DWithCoach(MujocoEnv, utils.EzPickle):
         xml_file: str = None,
         frame_skip: int = 2,
         default_camera_config: Dict[str, Union[float, int, np.ndarray]] = DEFAULT_CAMERA_CONFIG,
-        reset_noise_scale: float = 0.02,
+        reset_noise_scale: float = 0.01,
         **kwargs,
     ):
         if xml_file is None:
@@ -92,8 +95,7 @@ class InvertedPendulum3DWithCoach(MujocoEnv, utils.EzPickle):
         observation_space = Box(low=-np.inf, high=np.inf, shape=(11,), dtype=np.float64)
 
         self._reset_noise_scale = reset_noise_scale
-        self.step_count = 0
-        self.max_steps = 3000
+        self.coach_model = None  # Using model instead of action to provide an actual policy with an integrated parameter.
 
         MujocoEnv.__init__(
             self,
@@ -104,28 +106,50 @@ class InvertedPendulum3DWithCoach(MujocoEnv, utils.EzPickle):
             **kwargs,
         )
 
+        self.metadata = {
+            "render_modes": [
+                "human",
+                "rgb_array",
+                "depth_array",
+            ],
+            "render_fps": int(np.round(1.0 / self.dt)),
+        }
+
+        self.observation_structure = {
+            "qpos": self.data.qpos.size,
+            "qvel": self.data.qvel.size,
+        }
+
     def compute_reward(self, observation, action, angle):
         angle_reward = np.cos(angle)
         
         cart_x, cart_y = observation[0], observation[1]
-        time_factor = min(10.0, self.step_count / self.max_steps)
-        position_penalty = -time_factor * (cart_x**2 + cart_y**2)
+        distance_from_center = np.sqrt(cart_x**2 + cart_y**2)
+        position_penalty = -5.0 * distance_from_center**2  
         
         angular_velocity = np.linalg.norm(observation[8:11])
         angular_velocity_penalty = -0.1 * angular_velocity
         
         action_penalty = -0.01 * np.sum(np.square(action))
         
-        survival_bonus = 0.1
+        center_bonus = 1.0 if distance_from_center < 0.1 else 0.0 
         
-        reward = angle_reward + position_penalty + angular_velocity_penalty + action_penalty + survival_bonus
+        reward = angle_reward + position_penalty + angular_velocity_penalty + action_penalty + center_bonus
         
         return reward
 
     def step(self, action):
-        self.do_simulation(action, self.frame_skip)
-        self.step_count += 1
+        # Need to confirm
+        if self.coach_model is not None:
+            coach_action, _ = self.coach_model.predict(self._get_obs(), deterministic=True) # 코치 모델이 그 상황에 맞는 적절한 액션을 취함
+            combined_action = action + coach_action
+        else:
+            combined_action = action
 
+        self.do_simulation(combined_action, self.frame_skip)
+
+        #self.do_simulation(action, self.frame_skip)
+        
         observation = self._get_obs()
         
         quat = observation[2:6]
@@ -133,7 +157,11 @@ class InvertedPendulum3DWithCoach(MujocoEnv, utils.EzPickle):
         r = Rotation.from_quat(quat_xyzw)
         angle = r.magnitude()
         
-        reward = self.compute_reward(observation, action, angle)
+        # 코치의 액션이 가능한걸 확인하고 나중에 고칠것들
+        # 지금은 combined reward인데 학생 리워드 코치 리워드 따로 나눠야함
+        # 학생은 기존의 inverted training과 똑같은 리워드 구조 (학생 역시 아무런 액션을 취해도 코치가 고쳐준다면 배우는것이 없기 때문에 코치와의 해당 스텝에서 취하는 액션이 크게 다르면 안됨)
+        # 코치는 학생의 성과와 (learning rate) 코치의 개입에 따라 페널티를 받아야함 (개입을 최소화 시켜야함)
+        reward = self.compute_reward(observation, combined_action, angle)
         
         terminated = bool(
             not np.isfinite(observation).all() or 
@@ -150,7 +178,6 @@ class InvertedPendulum3DWithCoach(MujocoEnv, utils.EzPickle):
         return observation, reward, terminated, False, info
 
     def reset_model(self):
-        self.step_count = 0
         noise_low = -self._reset_noise_scale
         noise_high = self._reset_noise_scale
 
@@ -161,7 +188,11 @@ class InvertedPendulum3DWithCoach(MujocoEnv, utils.EzPickle):
             size=self.model.nv, low=noise_low, high=noise_high
         )
         self.set_state(qpos, qvel)
+        self.coach_action = None  # Coach part
         return self._get_obs()
 
     def _get_obs(self):
         return np.concatenate([self.data.qpos, self.data.qvel]).ravel()
+
+    def set_coach_model(self, model):   # Coach model method
+        self.coach_model = model
