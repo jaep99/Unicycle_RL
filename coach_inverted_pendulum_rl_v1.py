@@ -47,12 +47,12 @@ class PendulumCoachLogger(BaseCallback):
         return True
 
     def on_rollout_end(self) -> None:
-        if len(self.episode_starts) % 10 == 0:  # Every 10 episodes
+        if self.num_timesteps % 3000 == 0:  # Every 3000 steps
             self.plot_graphs()
 
     def plot_graphs(self):
-        episode_num = len(self.episode_starts) - 1
-        fig, axs = plt.subplots(2, 2, figsize=(20, 15))
+        iteration = self.num_timesteps // 3000
+        fig, axs = plt.subplots(3, 2, figsize=(20, 20))
 
         # Reward graph
         axs[0, 0].plot(self.timesteps, self.rewards)
@@ -68,24 +68,35 @@ class PendulumCoachLogger(BaseCallback):
         axs[0, 1].set_ylabel('Y Position')
         axs[0, 1].axis('equal')
 
-        # Student vs Coach actions
+        # Student actions
         axs[1, 0].plot(self.timesteps, self.student_actions)
-        axs[1, 0].plot(self.timesteps, self.coach_actions)
-        axs[1, 0].set_title('Student vs Coach Actions')
+        axs[1, 0].set_title('Student Actions')
         axs[1, 0].set_xlabel('Timesteps')
         axs[1, 0].set_ylabel('Action')
-        axs[1, 0].legend(['Student', 'Coach'])
+
+        # Coach actions
+        axs[1, 1].plot(self.timesteps, self.coach_actions)
+        axs[1, 1].set_title('Coach Actions')
+        axs[1, 1].set_xlabel('Timesteps')
+        axs[1, 1].set_ylabel('Action')
 
         # Average reward per episode
         episode_rewards = np.split(np.array(self.rewards), self.episode_starts[1:])
         avg_rewards = [np.mean(ep) for ep in episode_rewards if len(ep) > 0]
-        axs[1, 1].plot(range(1, len(avg_rewards) + 1), avg_rewards)
-        axs[1, 1].set_title('Average Reward per Episode')
-        axs[1, 1].set_xlabel('Episode')
-        axs[1, 1].set_ylabel('Average Reward')
+        axs[2, 0].plot(range(1, len(avg_rewards) + 1), avg_rewards)
+        axs[2, 0].set_title('Average Reward per Episode')
+        axs[2, 0].set_xlabel('Episode')
+        axs[2, 0].set_ylabel('Average Reward')
+
+        # Difference of Student and Coach action
+        action_diff = np.array(self.student_actions) - np.array(self.coach_actions)
+        axs[2, 1].plot(self.timesteps, action_diff)
+        axs[2, 1].set_title('Action Difference (Student - Coach)')
+        axs[2, 1].set_xlabel('Timesteps')
+        axs[2, 1].set_ylabel('Action Difference')
 
         plt.tight_layout()
-        save_path = os.path.join(self.best_model_path, f'pendulum_coach_analysis_episode_{episode_num}.png')
+        save_path = os.path.join(self.best_model_path, f'pendulum_coach_analysis_iteration_{iteration}.png')
         plt.savefig(save_path)
         print(f"Plot saved to: {save_path}")
         plt.close()
@@ -120,6 +131,8 @@ def train(env, coach_model):
         
         total_timesteps += TIMESTEPS
         print(f"Total timesteps: {total_timesteps}")
+        
+        pendulum_coach_logger.plot_graphs()
 
     print("Training completed after reaching 300000 timesteps.")
 
