@@ -88,13 +88,6 @@ class PendulumCoachLogger(BaseCallback):
         axs[2, 0].set_xlabel('Episode')
         axs[2, 0].set_ylabel('Average Reward')
 
-        # Difference of Student and Coach action
-        action_diff = np.array(self.student_actions) - np.array(self.coach_actions)
-        axs[2, 1].plot(self.timesteps, action_diff)
-        axs[2, 1].set_title('Action Difference (Student - Coach)')
-        axs[2, 1].set_xlabel('Timesteps')
-        axs[2, 1].set_ylabel('Action Difference')
-
         plt.tight_layout()
         save_path = os.path.join(self.best_model_path, f'pendulum_coach_analysis_iteration_{iteration}.png')
         plt.savefig(save_path)
