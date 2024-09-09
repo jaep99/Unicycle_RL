@@ -51,7 +51,7 @@ def train(env, sb3_algo):
         total_timesteps += TIMESTEPS
         print(f"Total timesteps: {total_timesteps}")
 
-    print("Training completed after reaching 300,000 timesteps.")
+    print("Training completed after reaching 300000 timesteps.")
 
 def test(env, sb3_algo, path_to_model, num_episodes=30):
     match sb3_algo:
