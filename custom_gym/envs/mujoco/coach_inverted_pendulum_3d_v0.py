@@ -153,7 +153,7 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         survival_bonus = 0.1
         
         student_reward = angle_reward + position_penalty + angular_velocity_penalty + action_penalty + survival_bonus
-        print(f"Student reward: {student_reward}")
+        #print(f"Student reward: {student_reward}")
         return student_reward
 
     def step(self, action):

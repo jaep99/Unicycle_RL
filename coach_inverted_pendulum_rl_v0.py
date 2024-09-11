@@ -50,18 +50,39 @@ class CoachAgent:
 class CoachAgent:
     def __init__(self, env):
         self.env = env  # Store the environment
+
+        # Original observation and action space dimensions
+        obs_shape = env.observation_space.shape[0]
+        action_shape = env.action_space.shape[0]
+
+        # Redefine the coach's observation space to include both observation and action
+        combined_obs_shape = obs_shape + action_shape
+
+        # Create a new observation space for the coach
+        combined_obs_space = Box(
+            low=-np.inf, high=np.inf, shape=(combined_obs_shape,), dtype=np.float32
+        )
+
+        # Initialize SAC with the new combined observation space
+        self.model = SAC(
+            "MlpPolicy", 
+            gym.spaces.Dict({"obs": combined_obs_space}), 
+            verbose=1, 
+            device="cpu"
+        )
         
         # Initialize SAC with the environment instead of spaces
-        self.model = SAC('MlpPolicy', env, verbose=1, device='cpu')
+        #self.model = SAC('MlpPolicy', env, verbose=1, device='cpu')
     
     def select_action(self, observation, student_action):
         # Concatenate the observation and student action
-        #coach_observation = np.concatenate([observation, student_action])
-        action, _ = self.model.predict(observation, deterministic=True)
+        coach_observation = np.concatenate([observation, student_action])
+        action, _ = self.model.predict({"obs": coach_observation}, deterministic=True)
+        #action, _ = self.model.predict(coach_observation, deterministic=True)
         return action
     
     def train(self, total_timesteps=10000):
-        self.model.learn(total_timesteps=total_timesteps)
+        self.model.learn(total_timesteps=total_timesteps) # Updates internal policy
 
 
 
@@ -78,13 +99,23 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
     }
     """
 
-    def __init__(self, env, coach_agent, render_mode=None, **kwargs):
+    def __init__(self, env, coach_agent, logger=None, render_mode=None, **kwargs):
         super(InvertedPendulum3DEnvWithCoach, self).__init__(env)
         self.coach_agent = coach_agent
+        self.logger = logger 
         self._render_mode = render_mode
         self.current_episode_reward = 0  # Track the student's current episode reward
         self.previous_episode_reward = None  # Track the student's previous episode reward
         self.coach_rewards =[] # Store coach rewards
+
+    def reset(self, **kwargs):
+        # Reset the wrapped environment (InvertedPendulum3DEnv)
+        obs, info = self.env.reset(**kwargs)
+        
+        # Reset the current episode reward
+        self.current_episode_reward = 0
+        
+        return obs, info
 
     def step(self, action):
         """
@@ -107,18 +138,27 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         
         # Update the student's current episode cumulative reward
         self.current_episode_reward += student_reward
+
+        # Log student reward
+        if self.logger:
+            self.logger.record("student/step_reward", student_reward)
+
+        # Log coach reward
+        if self.previous_episode_reward is not None:
+            improvement = self.current_episode_reward - self.previous_episode_reward
+            coach_reward = improvement
+        else:
+            coach_reward = 0 # No reward for the first episode
         
+        # Log coach reward at each step
+        if self.logger:
+            self.logger.record("coach/step_reward", coach_reward)
+            self.logger.dump()
+
+        # For tracking
+        self.coach_rewards.append(coach_reward)
+
         if terminated:
-            # Calculate coach's reward based on student's improvement
-            if self.previous_episode_reward is not None:
-                improvement = self.current_episode_reward - self.previous_episode_reward
-                coach_reward = improvement
-            else:
-                coach_reward = 0  # No reward for the first episode
-
-            # Log coach reward for plotting
-            self.coach_rewards.append(coach_reward)
-
             # Log the coach reward and train the coach
             self.coach_agent.model.replay_buffer.add(
                 observation, # Current observation
@@ -133,7 +173,7 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
             self.previous_episode_reward = self.current_episode_reward
             self.current_episode_reward = 0  # Reset for the next episode
         
-        return observation, student_reward, terminated, False, info
+        return next_observation, student_reward, terminated, False, info
     
     def render(self):
         return self.env.render()
@@ -152,30 +192,30 @@ os.makedirs(log_dir, exist_ok=True)
 MAX_EPISODE_STEPS = 30000
 
 
-
 def train(env, sb3_algo):
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     run_name = f"{sb3_algo}_{timestamp}"
 
     # Define observation and action spaces for the coach
-    observation_space = base_env.observation_space
-    action_space = base_env.action_space
+    observation_space = env.observation_space
+    action_space = env.action_space
 
     # Create a coach agent
-    coach_agent = CoachAgent(base_env)
-
-    # Wrap the environment with the coach
-    wrapped_env = InvertedPendulum3DEnvWithCoach(env, coach_agent)
+    coach_agent = CoachAgent(env)
 
     # TensorBoard logging for custom rewards
     log_dir = f"logs/{run_name}_coach"
     logger = configure(log_dir, ["tensorboard"])
 
+    # Wrap the environment with the coach
+    wrapped_env = InvertedPendulum3DEnvWithCoach(env, coach_agent, logger)
+
     # Create seperated environment for model evaluation added
     #eval_env = gym.make('InvertedPendulum3D-v1', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS)
     eval_env = InvertedPendulum3DEnvWithCoach(
         gym.make('InvertedPendulum3D-v3', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS),
-        coach_agent
+        coach_agent,
+        logger=None # No logging during evaluation
     )
 
     # EvalCallback added
@@ -196,7 +236,6 @@ def train(env, sb3_algo):
 
     TIMESTEPS = 100000 
     iters = 0
-    
 
     while True:
         iters += 1
@@ -212,14 +251,17 @@ def train(env, sb3_algo):
         # Log coach rewards to TensorBoard
         if wrapped_env.coach_rewards:  
             coach_reward = wrapped_env.coach_rewards[-1]
-            logger.record("coach/episode_reward", coach_reward)
+            if logger:
+                logger.record("coach/episode_reward", coach_reward)
 
         # Log student rewards to TensorBoard
         if wrapped_env.current_episode_reward is not None: 
             student_reward = wrapped_env.current_episode_reward
-            logger.record("student/episode_reward", student_reward)
+            if logger:
+                logger.record("student/episode_reward", student_reward)
 
-        logger.dump(step=iters * TIMESTEPS)
+        if logger:
+            logger.dump(step=iters * TIMESTEPS)
     
     logger.close()
     
@@ -229,29 +271,29 @@ def train(env, sb3_algo):
 def test(env, sb3_algo, path_to_model):
     observation_space = env.observation_space
     action_space = env.action_space
-    coach_agent = CoachAgent(observation_space, action_space)
-    wrapped_env = InvertedPendulum3DEnvWithCoach(env, coach_agent)
+    coach_agent = CoachAgent(env)
+    gymenv = InvertedPendulum3DEnvWithCoach(env, coach_agent, logger=None)
 
     match sb3_algo:
         case 'SAC':
-            model = SAC.load(path_to_model, env=env)
+            model = SAC.load(path_to_model, env=gymenv)
         case 'TD3':
-            model = TD3.load(path_to_model, env=env)
+            model = TD3.load(path_to_model, env=gymenv)
         case 'A2C':
-            model = A2C.load(path_to_model, env=env)
+            model = A2C.load(path_to_model, env=gymenv)
         case _:
             print('Algorithm not found')
             return
 
-    obs, _ = wrapped_env.reset()
+    obs, _ = gymenv.reset()
     terminated = truncated = False
     total_reward = 0
     step_count = 0
     
     while not (terminated or truncated) and step_count < MAX_EPISODE_STEPS:
         action, _ = model.predict(obs)
-        obs, reward, terminated, truncated, info = wrapped_env.step(action)
-        wrapped_env.render()
+        obs, reward, terminated, truncated, info = gymenv.step(action)
+        gymenv.render()
         
         total_reward += reward
         step_count += 1
@@ -289,19 +331,28 @@ if __name__ == '__main__':
 
     # Wrap the environment with the coach
     #gymenv = InvertedPendulum3DEnvWithCoach(base_env, coach_agent, render_mode=None)
-    gymenv = InvertedPendulum3DEnvWithCoach(base_env, coach_agent)
+    #gymenv = InvertedPendulum3DEnvWithCoach(base_env, coach_agent)
 
     if args.train:
+        # TensorBoard logging for training
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_name = f"{args.sb3_algo}_{timestamp}"
+        log_dir = f"logs/{run_name}_coach"
+        logger = configure(log_dir, ["tensorboard"])
+
+        # Wrap the environment with the coach and logger
+        gymenv = InvertedPendulum3DEnvWithCoach(base_env, coach_agent, logger)
+
         train(gymenv, args.sb3_algo)
 
     if args.test:
         if os.path.isfile(args.test):
             #gymenv = gym.make('InvertedPendulum3DWithCoach-v1', render_mode='human', max_episode_steps=MAX_EPISODE_STEPS)
             #gymenv = gym.make('InvertedPendulum3DWithCoach-v1', render_mode='human')
-            base_env = gym.make('InvertedPendulum3D-v3', render_mode='human')
+            test_env = gym.make('InvertedPendulum3D-v3', render_mode='human')
             #gymenv = InvertedPendulum3DEnvWithCoach(base_env, coach_agent, render_mode='human')
-            coach_agent = CoachAgent(observation_space, action_space)
-            gymenv = InvertedPendulum3DEnvWithCoach(base_env, coach_agent)
+            coach_agent = CoachAgent(test_env)
+            gymenv = InvertedPendulum3DEnvWithCoach(test_env, coach_agent, logger=None)
             test(gymenv, args.sb3_algo, path_to_model=args.test)
         else:
             print(f'{args.test} not found.')
