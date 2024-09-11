@@ -50,15 +50,54 @@ class PendulumCoachLogger(BaseCallback):
         if self.num_timesteps % 3000 == 0:  # Every 3000 steps
             self.plot_graphs()
 
+class PendulumCoachLogger(BaseCallback):
+    def __init__(self, best_model_path, verbose=0):
+        super(PendulumCoachLogger, self).__init__(verbose)
+        self.best_model_path = best_model_path
+        self.rewards = []
+        self.cart_positions = []
+        self.student_actions_x = []
+        self.student_actions_y = []
+        self.coach_actions_x = []
+        self.coach_actions_y = []
+        self.timesteps = []
+        self.episode_starts = [0]
+        self.iteration_rewards = []
+
+    def _on_step(self) -> bool:
+        obs = self.locals['new_obs'][0]
+        reward = self.locals['rewards'][0]
+        student_action = self.locals['actions'][0]
+        coach_action = self.training_env.get_attr('coach_action')[0]
+
+        self.rewards.append(reward)
+        self.cart_positions.append(obs[:2])
+        self.student_actions_x.append(student_action[0])
+        self.student_actions_y.append(student_action[1])
+        self.coach_actions_x.append(coach_action[0])
+        self.coach_actions_y.append(coach_action[1])
+        self.timesteps.append(self.num_timesteps)
+
+        if self.locals['dones'][0]:
+            self.episode_starts.append(self.num_timesteps)
+
+        return True
+
+    def on_rollout_end(self) -> None:
+        if self.num_timesteps % 3000 == 0:
+            self.iteration_rewards.append(self.rewards[-3000:])
+            self.plot_graphs()
+
     def plot_graphs(self):
         iteration = self.num_timesteps // 3000
         fig, axs = plt.subplots(3, 2, figsize=(20, 20))
 
-        # Reward graph
-        axs[0, 0].plot(self.timesteps, self.rewards)
-        axs[0, 0].set_title('Rewards over time')
+        # Reward graph (cumulative)
+        cumulative_rewards = np.cumsum(self.rewards)
+        axs[0, 0].plot(self.timesteps, cumulative_rewards)
+        axs[0, 0].set_title('Cumulative Rewards over time')
         axs[0, 0].set_xlabel('Timesteps')
-        axs[0, 0].set_ylabel('Reward')
+        axs[0, 0].set_ylabel('Cumulative Reward')
 
         # Cart position graph
         positions = np.array(self.cart_positions)
@@ -68,31 +107,50 @@ class PendulumCoachLogger(BaseCallback):
         axs[0, 1].set_ylabel('Y Position')
         axs[0, 1].axis('equal')
 
-        # Student actions
-        axs[1, 0].plot(self.timesteps, self.student_actions)
+        # Student actions (X and Y separately)
+        axs[1, 0].plot(self.timesteps, self.student_actions_x, label='X')
+        axs[1, 0].plot(self.timesteps, self.student_actions_y, label='Y')
         axs[1, 0].set_title('Student Actions')
         axs[1, 0].set_xlabel('Timesteps')
         axs[1, 0].set_ylabel('Action')
+        axs[1, 0].legend()
 
-        # Coach actions
-        axs[1, 1].plot(self.timesteps, self.coach_actions)
+        # Coach actions (X and Y separately)
+        axs[1, 1].plot(self.timesteps, self.coach_actions_x, label='X')
+        axs[1, 1].plot(self.timesteps, self.coach_actions_y, label='Y')
         axs[1, 1].set_title('Coach Actions')
         axs[1, 1].set_xlabel('Timesteps')
         axs[1, 1].set_ylabel('Action')
+        axs[1, 1].legend()
 
-        # Average reward per episode
-        episode_rewards = np.split(np.array(self.rewards), self.episode_starts[1:])
-        avg_rewards = [np.mean(ep) for ep in episode_rewards if len(ep) > 0]
-        axs[2, 0].plot(range(1, len(avg_rewards) + 1), avg_rewards)
-        axs[2, 0].set_title('Average Reward per Episode')
-        axs[2, 0].set_xlabel('Episode')
-        axs[2, 0].set_ylabel('Average Reward')
+        # Total Reward per Iteration
+        iteration_rewards = [np.sum(self.rewards[i:i+3000]) for i in range(0, len(self.rewards), 3000)]
+        axs[2, 0].plot(range(1, len(iteration_rewards) + 1), iteration_rewards)
+        axs[2, 0].set_title('Total Reward per Iteration')
+        axs[2, 0].set_xlabel('Iteration')
+        axs[2, 0].set_ylabel('Total Reward')
+
+        # Leave the last subplot empty for now
+        axs[2, 1].axis('off')
 
         plt.tight_layout()
         save_path = os.path.join(self.best_model_path, f'pendulum_coach_analysis_iteration_{iteration}.png')
         plt.savefig(save_path)
         print(f"Plot saved to: {save_path}")
         plt.close()
+
+    def plot_final_reward_graph(self):
+        plt.figure(figsize=(15, 10))
+        iteration_rewards = [np.sum(self.rewards[i:i+3000]) for i in range(0, len(self.rewards), 3000)]
+        plt.plot(range(1, len(iteration_rewards) + 1), iteration_rewards)
+        plt.title('Total Rewards per Iteration')
+        plt.xlabel('Iteration')
+        plt.ylabel('Total Reward')
+        save_path = os.path.join(self.best_model_path, 'final_reward_graph.png')
+        plt.savefig(save_path)
+        print(f"Final reward graph saved to: {save_path}")
+        plt.close()
+
 
 def train(env, coach_model):
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -128,6 +186,8 @@ def train(env, coach_model):
         pendulum_coach_logger.plot_graphs()
 
     print("Training completed after reaching 300000 timesteps.")
+    pendulum_coach_logger.plot_final_reward_graph()  # Final reward graph
+
 
 def test(env, path_to_model, num_episodes=30):
     model = SAC.load(path_to_model, env=env)
