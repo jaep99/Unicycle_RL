@@ -139,16 +139,16 @@ class InvertedPendulum3DWithCoach(MujocoEnv, utils.EzPickle):
         return reward
 
     def step(self, action):
-        # Need to confirm
         if self.coach_model is not None:
-            coach_action, _ = self.coach_model.predict(self._get_obs(), deterministic=True) # 코치 모델이 그 상황에 맞는 적절한 액션을 취함
+            obs = self._get_obs()
+            coach_action, _ = self.coach_model.predict(obs, deterministic=True)
             combined_action = action + coach_action
+            self.coach_action = coach_action 
         else:
             combined_action = action
+            self.coach_action = np.zeros_like(action)
 
         self.do_simulation(combined_action, self.frame_skip)
-
-        #self.do_simulation(action, self.frame_skip)
         
         observation = self._get_obs()
         
@@ -157,10 +157,6 @@ class InvertedPendulum3DWithCoach(MujocoEnv, utils.EzPickle):
         r = Rotation.from_quat(quat_xyzw)
         angle = r.magnitude()
         
-        # 코치의 액션이 가능한걸 확인하고 나중에 고칠것들
-        # 지금은 combined reward인데 학생 리워드 코치 리워드 따로 나눠야함
-        # 학생은 기존의 inverted training과 똑같은 리워드 구조 (학생 역시 아무런 액션을 취해도 코치가 고쳐준다면 배우는것이 없기 때문에 코치와의 해당 스텝에서 취하는 액션이 크게 다르면 안됨)
-        # 코치는 학생의 성과와 (learning rate) 코치의 개입에 따라 페널티를 받아야함 (개입을 최소화 시켜야함)
         reward = self.compute_reward(observation, combined_action, angle)
         
         terminated = bool(
@@ -170,7 +166,7 @@ class InvertedPendulum3DWithCoach(MujocoEnv, utils.EzPickle):
             (np.abs(observation[1]) > 5)
         )
         
-        info = {"angle": angle}
+        info = {"angle": angle, "coach_action": self.coach_action}
         
         if self.render_mode == "human":
             self.render()
