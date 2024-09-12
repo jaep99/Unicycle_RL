@@ -78,30 +78,26 @@ class PendulumCoachLogger(BaseCallback):
         axs[0, 1].axis('equal')
 
         # Student actions (X and Y separately)
-        axs[1, 0].plot(self.timesteps, self.student_actions_x, label='X')
-        axs[1, 0].plot(self.timesteps, self.student_actions_y, label='Y')
-        axs[1, 0].set_title('Student Actions')
+        axs[1, 0].plot(self.timesteps, self.student_actions_x)
+        axs[1, 0].set_title('Student Actions (X)')
         axs[1, 0].set_xlabel('Timesteps')
         axs[1, 0].set_ylabel('Action')
-        axs[1, 0].legend()
 
-        # Coach actions (X and Y separately)
-        axs[1, 1].plot(self.timesteps, self.coach_actions_x, label='X')
-        axs[1, 1].plot(self.timesteps, self.coach_actions_y, label='Y')
-        axs[1, 1].set_title('Coach Actions')
+        axs[1, 1].plot(self.timesteps, self.student_actions_y)
+        axs[1, 1].set_title('Student Actions (Y)')
         axs[1, 1].set_xlabel('Timesteps')
         axs[1, 1].set_ylabel('Action')
-        axs[1, 1].legend()
 
-        # Total Reward per Iteration
-        iteration_rewards = [np.sum(self.rewards[i:i+3000]) for i in range(0, len(self.rewards), 3000)]
-        axs[2, 0].plot(range(1, len(iteration_rewards) + 1), iteration_rewards)
-        axs[2, 0].set_title('Total Reward per Iteration')
-        axs[2, 0].set_xlabel('Iteration')
-        axs[2, 0].set_ylabel('Total Reward')
+        # Coach actions (X and Y separately)
+        axs[2, 0].plot(self.timesteps, self.coach_actions_x)
+        axs[2, 0].set_title('Coach Actions (X)')
+        axs[2, 0].set_xlabel('Timesteps')
+        axs[2, 0].set_ylabel('Action')
 
-        # Leave the last subplot empty for now
-        axs[2, 1].axis('off')
+        axs[2, 1].plot(self.timesteps, self.coach_actions_y)
+        axs[2, 1].set_title('Coach Actions (Y)')
+        axs[2, 1].set_xlabel('Timesteps')
+        axs[2, 1].set_ylabel('Action')
 
         plt.tight_layout()
         save_path = os.path.join(self.best_model_path, f'pendulum_coach_analysis_iteration_{iteration}.png')
