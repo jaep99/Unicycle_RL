@@ -47,37 +47,55 @@ class CoachAgent:
     def train(self, total_timesteps=10000):
         self.model.learn(total_timesteps=total_timesteps)
 """
+
+class CoachEnvWrapper(gym.Env):
+    """
+    Custom environment to handle combined observation (student observation + student action)
+    for the coach agent.
+    """
+    def __init__(self, env, action_space):
+        self.env = env
+        self.action_space = action_space
+        
+        # Redefine observation space to include both student observation and action
+        obs_shape = self.env.observation_space.shape[0]
+        action_shape = self.action_space.shape[0]
+        combined_obs_shape = obs_shape + action_shape
+        self.observation_space = Box(low=-np.inf, high=np.inf, shape=(combined_obs_shape,), dtype=np.float32)
+
+    def reset(self):
+        # Reset the environment and return the initial observation
+        obs = self.env.reset()
+        return np.concatenate([obs, np.zeros(self.action_space.shape)])  # Initialize with zero actions
+
+    def step(self, action):
+        # Perform a step in the environment, returning the combined observation (obs + student action)
+        obs, reward, done, info = self.env.step(action)
+        combined_obs = np.concatenate([obs, action])  # Combine observation with student's action
+        return combined_obs, reward, done, info
+
+    def render(self, mode='human'):
+        return self.env.render(mode=mode)
+
+
 class CoachAgent:
     def __init__(self, env):
-        self.env = env  # Store the environment
+        self.env = env
+        self.action_space = env.action_space
 
-        # Original observation and action space dimensions
-        obs_shape = env.observation_space.shape[0]
-        action_shape = env.action_space.shape[0]
+        # Wrap the base environment with the custom CoachEnvWrapper
+        self.coach_env = CoachEnvWrapper(env, self.action_space)
 
-        # Redefine the coach's observation space to include both observation and action
-        combined_obs_shape = obs_shape + action_shape
-
-        # Create a new observation space for the coach
-        combined_obs_space = Box(
-            low=-np.inf, high=np.inf, shape=(combined_obs_shape,), dtype=np.float32
-        )
-
-        # Initialize SAC with the new combined observation space
-        self.model = SAC(
-            "MlpPolicy", 
-            gym.spaces.Dict({"obs": combined_obs_space}), 
-            verbose=1, 
-            device="cpu"
-        )
+        # Initialize SAC with the wrapped environment
+        self.model = SAC("MlpPolicy", self.coach_env, verbose=1, device="cpu")
         
         # Initialize SAC with the environment instead of spaces
         #self.model = SAC('MlpPolicy', env, verbose=1, device='cpu')
     
     def select_action(self, observation, student_action):
         # Concatenate the observation and student action
-        coach_observation = np.concatenate([observation, student_action])
-        action, _ = self.model.predict({"obs": coach_observation}, deterministic=True)
+        combined_observation = np.concatenate([observation, student_action])
+        action, _ = self.model.predict(combined_observation, deterministic=True)
         #action, _ = self.model.predict(coach_observation, deterministic=True)
         return action
     
@@ -139,10 +157,6 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         # Update the student's current episode cumulative reward
         self.current_episode_reward += student_reward
 
-        # Log student reward
-        if self.logger:
-            self.logger.record("student/step_reward", student_reward)
-
         # Log coach reward
         if self.previous_episode_reward is not None:
             improvement = self.current_episode_reward - self.previous_episode_reward
@@ -152,17 +166,33 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         
         # Log coach reward at each step
         if self.logger:
+            self.logger.record("student/step_reward", student_reward)
             self.logger.record("coach/step_reward", coach_reward)
-            self.logger.dump()
+            self.logger.record("student/timesteps", self.env.unwrapped.step_count)  # Track timestep at each step
+            self.logger.record("coach/timesteps", self.env.unwrapped.step_count)    # Track timestep at each step
+            if self.step_count % 100 == 0:
+                self.logger.dump()
 
         # For tracking
         self.coach_rewards.append(coach_reward)
 
         if terminated:
+            # Log episode rewards
+            if self.logger:
+                self.logger.record("student/episode_reward", self.current_episode_reward)
+                self.logger.record("coach/episode_reward", sum(self.coach_rewards))
+                self.logger.record("student/timesteps", self.step_count)  # Log timesteps at episode end
+                self.logger.record("coach/timesteps", self.step_count)    # Log timesteps at episode end
+                self.logger.dump()
+
+            # Create combined observation for replay buffer (observation + action)
+            combined_observation = np.concatenate([observation, action])
+            combined_next_observation = np.concatenate([next_observation, action])
+
             # Log the coach reward and train the coach
             self.coach_agent.model.replay_buffer.add(
-                observation, # Current observation
-                next_observation, # Newly captured observation
+                combined_observation, # Current observation
+                combined_next_observation, # Newly captured observation
                 combined_action, # Combined action
                 np.array([coach_reward]), # Coach reward
                 np.array([done]), # Episode termination status
@@ -321,13 +351,8 @@ if __name__ == '__main__':
 
     #base_env = EnvCompatibility(base_env)
     check_env(base_env)
-    # Define observation and action spaces for the coach
-    observation_space = base_env.observation_space
-    action_space = base_env.action_space
-
-
-    # Create a coach agent
-    coach_agent = CoachAgent(base_env)
+    
+    
 
     # Wrap the environment with the coach
     #gymenv = InvertedPendulum3DEnvWithCoach(base_env, coach_agent, render_mode=None)
@@ -340,6 +365,9 @@ if __name__ == '__main__':
         log_dir = f"logs/{run_name}_coach"
         logger = configure(log_dir, ["tensorboard"])
 
+        # Create a coach agent
+        coach_agent = CoachAgent(base_env)
+
         # Wrap the environment with the coach and logger
         gymenv = InvertedPendulum3DEnvWithCoach(base_env, coach_agent, logger)
 
@@ -351,8 +379,9 @@ if __name__ == '__main__':
             #gymenv = gym.make('InvertedPendulum3DWithCoach-v1', render_mode='human')
             test_env = gym.make('InvertedPendulum3D-v3', render_mode='human')
             #gymenv = InvertedPendulum3DEnvWithCoach(base_env, coach_agent, render_mode='human')
-            coach_agent = CoachAgent(test_env)
-            gymenv = InvertedPendulum3DEnvWithCoach(test_env, coach_agent, logger=None)
+            # Unwrap the environment if it's wrapped with any wrapper like TimeLimit, OrderEnforcing, or PassiveEnvChecker
+            coach_agent = CoachAgent(base_env)
+            gymenv = InvertedPendulum3DEnvWithCoach(base_env, coach_agent, logger=None)
             test(gymenv, args.sb3_algo, path_to_model=args.test)
         else:
             print(f'{args.test} not found.')
