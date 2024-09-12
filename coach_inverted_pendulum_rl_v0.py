@@ -180,10 +180,11 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
             # Log episode rewards
             if self.logger:
                 self.logger.record("student/episode_reward", self.current_episode_reward)
-                self.logger.record("coach/episode_reward", sum(self.coach_rewards))
-                self.logger.record("student/timesteps", self.step_count)  # Log timesteps at episode end
-                self.logger.record("coach/timesteps", self.step_count)    # Log timesteps at episode end
-                self.logger.dump()
+                self.logger.record("coach/episode_reward", sum(self.coach_reward))
+                self.logger.record("student/timesteps", self.env.unwrapped.step_count)  # Log timesteps at episode end
+                self.logger.record("coach/timesteps", self.env.unwrapped.step_count)    # Log timesteps at episode end
+                if self.step_count % 100 == 0:
+                    self.logger.dump()
 
             # Create combined observation for replay buffer (observation + action)
             combined_observation = np.concatenate([observation, action])
@@ -191,8 +192,8 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
 
             # Log the coach reward and train the coach
             self.coach_agent.model.replay_buffer.add(
-                combined_observation, # Current observation
-                combined_next_observation, # Newly captured observation
+                combined_observation, # Comb observation
+                combined_next_observation, # Next observation
                 combined_action, # Combined action
                 np.array([coach_reward]), # Coach reward
                 np.array([done]), # Episode termination status
