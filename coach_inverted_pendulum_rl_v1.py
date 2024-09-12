@@ -29,6 +29,8 @@ class PendulumCoachLogger(BaseCallback):
         self.student_actions_y = []
         self.coach_actions_x = []
         self.coach_actions_y = []
+        self.combined_actions_x = []
+        self.combined_actions_y = []
         self.timesteps = []
         self.episode_starts = [0]
         self.iteration_rewards = []
@@ -46,6 +48,10 @@ class PendulumCoachLogger(BaseCallback):
         self.student_actions_y.append(student_action[1])
         self.coach_actions_x.append(coach_action[0])
         self.coach_actions_y.append(coach_action[1])
+        combined_action_x = student_action[0] + coach_action[0]
+        combined_action_y = student_action[1] + coach_action[1]
+        self.combined_actions_x.append(combined_action_x)
+        self.combined_actions_y.append(combined_action_y)
         self.timesteps.append(self.num_timesteps)
 
         if self.locals['dones'][0]:
@@ -60,7 +66,7 @@ class PendulumCoachLogger(BaseCallback):
 
     def plot_graphs(self):
         iteration = self.num_timesteps // 3000
-        fig, axs = plt.subplots(3, 2, figsize=(20, 20))
+        fig, axs = plt.subplots(4, 2, figsize=(20, 25))
 
         # Reward graph (cumulative)
         cumulative_rewards = np.cumsum(self.rewards)
@@ -98,6 +104,19 @@ class PendulumCoachLogger(BaseCallback):
         axs[2, 1].set_title('Coach Actions (Y)')
         axs[2, 1].set_xlabel('Timesteps')
         axs[2, 1].set_ylabel('Action')
+
+        # Combined actions (X and Y separately)
+        axs[3, 0].plot(self.timesteps, self.combined_actions_x)
+        axs[3, 0].set_title('Combined Actions (X)')
+        axs[3, 0].set_xlabel('Timesteps')
+        axs[3, 0].set_ylabel('Action')
+        axs[3, 0].axhline(y=0, color='r', linestyle='--')
+
+        axs[3, 1].plot(self.timesteps, self.combined_actions_y)
+        axs[3, 1].set_title('Combined Actions (Y)')
+        axs[3, 1].set_xlabel('Timesteps')
+        axs[3, 1].set_ylabel('Action')
+        axs[3, 1].axhline(y=0, color='r', linestyle='--')
 
         plt.tight_layout()
         save_path = os.path.join(self.best_model_path, f'pendulum_coach_analysis_iteration_{iteration}.png')
