@@ -6,6 +6,7 @@ import custom_gym.envs.mujoco
 from stable_baselines3.common.callbacks import BaseCallback, EvalCallback
 import datetime
 import numpy as np
+from scipy.spatial.transform import Rotation
 import matplotlib.pyplot as plt
 
 # Create directories to hold models and logs
@@ -17,38 +18,6 @@ os.makedirs(log_dir, exist_ok=True)
 # Max episode steps and coach model path
 MAX_EPISODE_STEPS = 3000
 COACH_MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "pendulum_trained_model.zip")
-
-class PendulumCoachLogger(BaseCallback):
-    def __init__(self, best_model_path, verbose=0):
-        super(PendulumCoachLogger, self).__init__(verbose)
-        self.best_model_path = best_model_path
-        self.rewards = []
-        self.cart_positions = []
-        self.student_actions = []
-        self.coach_actions = []
-        self.timesteps = []
-        self.episode_starts = [0]
-
-    def _on_step(self) -> bool:
-        obs = self.locals['new_obs'][0]
-        reward = self.locals['rewards'][0]
-        student_action = self.locals['actions'][0]
-        coach_action = self.training_env.get_attr('coach_action')[0]
-
-        self.rewards.append(reward)
-        self.cart_positions.append(obs[:2])  # x and y positions
-        self.student_actions.append(student_action)
-        self.coach_actions.append(coach_action)
-        self.timesteps.append(self.num_timesteps)
-
-        if self.locals['dones'][0]:
-            self.episode_starts.append(self.num_timesteps)
-
-        return True
-
-    def on_rollout_end(self) -> None:
-        if self.num_timesteps % 3000 == 0:  # Every 3000 steps
-            self.plot_graphs()
 
 class PendulumCoachLogger(BaseCallback):
     def __init__(self, best_model_path, verbose=0):
@@ -68,7 +37,8 @@ class PendulumCoachLogger(BaseCallback):
         obs = self.locals['new_obs'][0]
         reward = self.locals['rewards'][0]
         student_action = self.locals['actions'][0]
-        coach_action = self.training_env.get_attr('coach_action')[0]
+        info = self.locals['infos'][0]
+        coach_action = info.get('coach_action', np.zeros_like(student_action))
 
         self.rewards.append(reward)
         self.cart_positions.append(obs[:2])
@@ -108,30 +78,26 @@ class PendulumCoachLogger(BaseCallback):
         axs[0, 1].axis('equal')
 
         # Student actions (X and Y separately)
-        axs[1, 0].plot(self.timesteps, self.student_actions_x, label='X')
-        axs[1, 0].plot(self.timesteps, self.student_actions_y, label='Y')
-        axs[1, 0].set_title('Student Actions')
+        axs[1, 0].plot(self.timesteps, self.student_actions_x)
+        axs[1, 0].set_title('Student Actions (X)')
         axs[1, 0].set_xlabel('Timesteps')
         axs[1, 0].set_ylabel('Action')
-        axs[1, 0].legend()
 
-        # Coach actions (X and Y separately)
-        axs[1, 1].plot(self.timesteps, self.coach_actions_x, label='X')
-        axs[1, 1].plot(self.timesteps, self.coach_actions_y, label='Y')
-        axs[1, 1].set_title('Coach Actions')
+        axs[1, 1].plot(self.timesteps, self.student_actions_y)
+        axs[1, 1].set_title('Student Actions (Y)')
         axs[1, 1].set_xlabel('Timesteps')
         axs[1, 1].set_ylabel('Action')
-        axs[1, 1].legend()
 
-        # Total Reward per Iteration
-        iteration_rewards = [np.sum(self.rewards[i:i+3000]) for i in range(0, len(self.rewards), 3000)]
-        axs[2, 0].plot(range(1, len(iteration_rewards) + 1), iteration_rewards)
-        axs[2, 0].set_title('Total Reward per Iteration')
-        axs[2, 0].set_xlabel('Iteration')
-        axs[2, 0].set_ylabel('Total Reward')
+        # Coach actions (X and Y separately)
+        axs[2, 0].plot(self.timesteps, self.coach_actions_x)
+        axs[2, 0].set_title('Coach Actions (X)')
+        axs[2, 0].set_xlabel('Timesteps')
+        axs[2, 0].set_ylabel('Action')
 
-        # Leave the last subplot empty for now
-        axs[2, 1].axis('off')
+        axs[2, 1].plot(self.timesteps, self.coach_actions_y)
+        axs[2, 1].set_title('Coach Actions (Y)')
+        axs[2, 1].set_xlabel('Timesteps')
+        axs[2, 1].set_ylabel('Action')
 
         plt.tight_layout()
         save_path = os.path.join(self.best_model_path, f'pendulum_coach_analysis_iteration_{iteration}.png')
@@ -151,7 +117,6 @@ class PendulumCoachLogger(BaseCallback):
         print(f"Final reward graph saved to: {save_path}")
         plt.close()
 
-
 def train(env, coach_model):
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     run_name = f"Pendulum_Coach_{timestamp}"
@@ -160,8 +125,19 @@ def train(env, coach_model):
     os.makedirs(best_model_path, exist_ok=True)
 
     eval_env = gym.make('InvertedPendulum3DWithCoach-v1', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS)
-    eval_env.set_coach_model(coach_model)
     
+    env.set_coach_model(coach_model)
+    eval_env.set_coach_model(coach_model)
+    print("Coach model set for training env:", env.coach_model is not None)
+    print("Coach model set for eval env:", eval_env.coach_model is not None)
+
+    print("Testing coach model:")
+    test_obs = env.reset()[0]
+    test_action, _ = coach_model.predict(test_obs, deterministic=True)
+    print("Test observation:", test_obs)
+    print("Test coach action:", test_action)
+    env.reset()  # 환경 상태 리셋
+
     eval_callback = EvalCallback(eval_env, best_model_save_path=best_model_path,
                                  log_path=log_dir, eval_freq=10000,
                                  deterministic=True, render=False)
@@ -187,7 +163,6 @@ def train(env, coach_model):
 
     print("Training completed after reaching 300000 timesteps.")
     pendulum_coach_logger.plot_final_reward_graph()  # Final reward graph
-
 
 def test(env, path_to_model, num_episodes=30):
     model = SAC.load(path_to_model, env=env)
