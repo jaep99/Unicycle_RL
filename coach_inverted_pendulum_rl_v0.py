@@ -5,6 +5,7 @@ from gymnasium import Env
 from gymnasium.wrappers import EnvCompatibility
 from stable_baselines3 import SAC, TD3, A2C
 from stable_baselines3.common.env_checker import check_env
+from stable_baselines3.common.monitor import Monitor
 import os
 import argparse
 import custom_gym.envs.mujoco
@@ -63,16 +64,16 @@ class CoachEnvWrapper(gym.Env):
         combined_obs_shape = obs_shape + action_shape
         self.observation_space = Box(low=-np.inf, high=np.inf, shape=(combined_obs_shape,), dtype=np.float32)
 
-    def reset(self):
+    def reset(self, seed=None, options=None):
         # Reset the environment and return the initial observation
-        obs = self.env.reset()
-        return np.concatenate([obs, np.zeros(self.action_space.shape)])  # Initialize with zero actions
+        obs, info = self.env.reset(seed=seed, options=options)
+        return np.concatenate([obs, np.zeros(self.action_space.shape)]), info  # Initialize with zero actions
 
     def step(self, action):
         # Perform a step in the environment, returning the combined observation (obs + student action)
-        obs, reward, done, info = self.env.step(action)
+        obs, reward, terminated, truncated, info = self.env.step(action)
         combined_obs = np.concatenate([obs, action])  # Combine observation with student's action
-        return combined_obs, reward, done, info
+        return combined_obs, reward, terminated, truncated, info
 
     def render(self, mode='human'):
         return self.env.render(mode=mode)
@@ -125,6 +126,7 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         self.current_episode_reward = 0  # Track the student's current episode reward
         self.previous_episode_reward = None  # Track the student's previous episode reward
         self.coach_rewards =[] # Store coach rewards
+        self.coach_total_rewards = 0
 
     def reset(self, **kwargs):
         # Reset the wrapped environment (InvertedPendulum3DEnv)
@@ -132,6 +134,9 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         
         # Reset the current episode reward
         self.current_episode_reward = 0
+        
+        self.coach_total_rewards = 0
+        self.coach_rewards = []
         
         return obs, info
 
@@ -152,7 +157,7 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         # Perform the environment step with the combined action
         combined_action = action + coach_action
         next_observation, student_reward, terminated, truncated, info = self.env.step(combined_action)
-        done = terminated
+        done = terminated or truncated
         
         # Update the student's current episode cumulative reward
         self.current_episode_reward += student_reward
@@ -163,27 +168,33 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
             coach_reward = improvement
         else:
             coach_reward = 0 # No reward for the first episode
+
+        # Storing coach reward for this step
+        self.coach_rewards.append(coach_reward)
+        self.coach_total_rewards += coach_reward
         
         # Log coach reward at each step
+        print(f"Student reward: {student_reward}, Coach reward: {coach_reward}")
         if self.logger:
             self.logger.record("student/step_reward", student_reward)
             self.logger.record("coach/step_reward", coach_reward)
             self.logger.record("student/timesteps", self.env.unwrapped.step_count)  # Track timestep at each step
             self.logger.record("coach/timesteps", self.env.unwrapped.step_count)    # Track timestep at each step
-            if self.step_count % 100 == 0:
+            if self.env.unwrapped.step_count % 10 == 0:
                 self.logger.dump()
-
-        # For tracking
-        self.coach_rewards.append(coach_reward)
 
         if terminated:
             # Log episode rewards
             if self.logger:
+                # Student's rewards
                 self.logger.record("student/episode_reward", self.current_episode_reward)
-                self.logger.record("coach/episode_reward", sum(self.coach_reward))
-                self.logger.record("student/timesteps", self.env.unwrapped.step_count)  # Log timesteps at episode end
-                self.logger.record("coach/timesteps", self.env.unwrapped.step_count)    # Log timesteps at episode end
-                if self.step_count % 100 == 0:
+                self.logger.record("student/ep_rew_mean", self.current_episode_reward / self.env.unwrapped.step_count)
+                
+                # Coach's rewards
+                self.logger.record("coach/episode_reward", self.coach_total_rewards)
+                self.logger.record("coach/ep_rew_mean", self.coach_total_rewards / self.env.unwrapped.step_count)
+                
+                if self.env.unwrapped.step_count % 10 == 0:
                     self.logger.dump()
 
             # Create combined observation for replay buffer (observation + action)
@@ -203,6 +214,7 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
             # Update the previous episode reward
             self.previous_episode_reward = self.current_episode_reward
             self.current_episode_reward = 0  # Reset for the next episode
+            self.coach_total_rewards = 0
         
         return next_observation, student_reward, terminated, False, info
     
@@ -249,6 +261,8 @@ def train(env, sb3_algo):
         logger=None # No logging during evaluation
     )
 
+    eval_env = Monitor(eval_env)
+
     # EvalCallback added
     eval_callback = EvalCallback(eval_env, best_model_save_path=f"{model_dir}/best_{run_name}",
                                  log_path=log_dir, eval_freq=10000,
@@ -293,6 +307,7 @@ def train(env, sb3_algo):
 
         if logger:
             logger.dump(step=iters * TIMESTEPS)
+            #logger.dump(step=self.env.unwrapped.step_count)
     
     logger.close()
     
