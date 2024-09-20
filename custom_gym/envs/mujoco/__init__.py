@@ -73,3 +73,8 @@ register(
     entry_point='custom_gym.envs.mujoco.unicycle_pendulum_trajectory_curriculum_3d_v0:UnicyclePendulumTrajectoryCurriculum',
 )
 
+register(
+    id='SolutionUnicyclePendulumTrajectory-v0',
+    entry_point='custom_gym.envs.mujoco.solution_unicycle_pendulum_trajectory_3d_v0:SolutionUnicyclePendulumTrajectory',
+)
+

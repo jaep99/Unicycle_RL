@@ -14,10 +14,12 @@ DEFAULT_CAMERA_CONFIG = {
     "lookat": np.array((0.0, 0.0, 1.0)),
 }
 
-class UnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
+class SolutionUnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
     """
     ## Description
-    This environment simulates a unicycle with an inverted pendulum attached to it. The goal is to balance both the unicycle and the pendulum while moving the unicycle forward for 12 meters along the x-axis.
+    This environment simulates a unicycle with an inverted pendulum attached to it. 
+    The goal is to balance both the unicycle and the pendulum while moving the unicycle forward for 12 meters along the x-axis.
+    After training, this model will be used as an ideal solution of Unicycle Trajectory Model.
 
     ## Action Space
     The agent takes a 3-element vector for actions.

@@ -116,7 +116,7 @@ def train(env, sb3_algo):
     os.makedirs(best_model_path, exist_ok=True)
     
     # Create a separate environment for model evaluation
-    eval_env = RewardWrapper(gym.make('UnicyclePendulumTrajectory-v0', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS))
+    eval_env = RewardWrapper(gym.make('SolutionUnicyclePendulumTrajectory-v0', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS))
     
     # Initialize the EvalCallback for saving the best model
     eval_callback = EvalCallback(
@@ -230,7 +230,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Create and wrap the environment
-    gymenv = RewardWrapper(gym.make('UnicyclePendulumTrajectory-v0', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS))
+    gymenv = RewardWrapper(gym.make('SolutionUnicyclePendulumTrajectory-v0', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS))
 
     if args.train:
         train(gymenv, args.sb3_algo)
@@ -238,7 +238,7 @@ if __name__ == '__main__':
     if args.test:
         if os.path.isfile(args.test):
             # For testing, use render_mode='human'
-            test_env = RewardWrapper(gym.make('UnicyclePendulumTrajectory-v0', render_mode='human', max_episode_steps=MAX_EPISODE_STEPS))
+            test_env = RewardWrapper(gym.make('SolutionUnicyclePendulumTrajectory-v0', render_mode='human', max_episode_steps=MAX_EPISODE_STEPS))
             test(test_env, args.sb3_algo, path_to_model=args.test)
         else:
             print(f'{args.test} not found.')
