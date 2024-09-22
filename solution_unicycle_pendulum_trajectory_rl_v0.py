@@ -29,11 +29,16 @@ class UnicyclePendulumLogger(BaseCallback):
         self.wheel_velocities = []
         self.timesteps = []
         self.success_counts = []
+        self.strict_mode_states = []
+        self.success_trajectories = []
+        self.current_trajectory = []
 
     def _on_step(self) -> bool:
         obs = self.locals['new_obs'][0]
         info = self.locals['infos'][0]
-        self.unicycle_positions.append(obs[:3])
+        position = obs[:3]
+        self.unicycle_positions.append(position)
+        self.current_trajectory.append(position)
         
         unicycle_quat = obs[3:7]
         pendulum_quat = obs[7:11]
@@ -46,6 +51,12 @@ class UnicyclePendulumLogger(BaseCallback):
         self.wheel_velocities.append(obs[21])
         self.timesteps.append(self.num_timesteps)
         self.success_counts.append(info['success_count'])
+        self.strict_mode_states.append(info['strict_mode'])
+
+        if info.get('goal_reached', False):
+            self.success_trajectories.append(np.array(self.current_trajectory))
+            self.current_trajectory = []
+
         return True
 
 # Environment wrapper to add bonus reward
@@ -94,18 +105,46 @@ def plot_unicycle_pendulum_position(logger, run_name):
     ax.legend(['Unicycle Roll', 'Unicycle Pitch', 'Unicycle Yaw', 
                'Pendulum Roll', 'Pendulum Pitch', 'Pendulum Yaw'])
 
-    # Success count
+    # Success count and Strict Mode
     ax = fig.add_subplot(224)
     ax.plot(logger.timesteps, logger.success_counts)
-    ax.set_title('Cumulative Success Count')
+    ax.set_title('Cumulative Success Count and Strict Mode')
     ax.set_xlabel('Timesteps')
     ax.set_ylabel('Number of Successes')
+
+    # Add strict mode indicator
+    strict_mode_start = next((i for i, mode in enumerate(logger.strict_mode_states) if mode), None)
+    if strict_mode_start is not None:
+        ax.axvline(x=logger.timesteps[strict_mode_start], color='r', linestyle='--', label='Strict Mode Start')
+        ax.legend()
 
     plt.tight_layout()
     
     save_path = os.path.join(log_dir, f'{run_name}_analysis.png')
     plt.savefig(save_path)
     print(f"Plot saved to: {save_path}")
+    plt.close()
+
+# Function to plot success trajectories
+def plot_success_trajectories(logger, run_name):
+    fig = plt.figure(figsize=(20, 15))
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Plot every 50th successful trajectory
+    for i, trajectory in enumerate(logger.success_trajectories[::50]):
+        xs, ys, zs = trajectory.T
+        ax.plot(xs, ys, zs, label=f'Success {i*50+1}')
+
+    ax.set_xlabel('X Position')
+    ax.set_ylabel('Y Position')
+    ax.set_zlabel('Z Position')
+    ax.set_title('Successful Trajectories (every 50th)')
+    ax.legend()
+
+    plt.tight_layout()
+    save_path = os.path.join(log_dir, f'{run_name}_success_trajectories.png')
+    plt.savefig(save_path)
+    print(f"Success trajectories plot saved to: {save_path}")
     plt.close()
 
 # Main training function
@@ -140,7 +179,7 @@ def train(env):
     # Initialize the SAC model
     model = SAC('MlpPolicy', env, verbose=1, device='cuda', tensorboard_log=log_dir)
 
-    # Train the model until 100 successes are achieved
+    # Train the model until 1000 successes are achieved
     total_timesteps = 0
     start_time = time.time()
     prev_success_count = 0
@@ -153,16 +192,17 @@ def train(env):
         new_successes = current_success_count - prev_success_count
         
         print(f"Total timesteps: {total_timesteps}, Total Successes: {current_success_count}, New Successes: {new_successes}")
+        print(f"Strict Mode: {'On' if unicycle_pendulum_logger.strict_mode_states[-1] else 'Off'}")
         
         if new_successes > 0:
             print(f"Goal reached! New success count: {new_successes}")
         
         prev_success_count = current_success_count
 
-        if current_success_count >= 100:
+        if current_success_count >= 1000:
             end_time = time.time()
             training_time = end_time - start_time
-            print(f"\nTraining completed! 100 successes achieved.")
+            print(f"\nTraining completed! 1000 successes achieved.")
             print(f"Total training time: {training_time:.2f} seconds")
             print(f"Total timesteps: {total_timesteps}")
             break
@@ -172,6 +212,9 @@ def train(env):
 
     # Generate and save the unicycle and pendulum position plot
     plot_unicycle_pendulum_position(unicycle_pendulum_logger, run_name)
+
+    # Generate and save the success trajectories plot
+    plot_success_trajectories(unicycle_pendulum_logger, run_name)
 
 # Function to test the trained model
 def test(env, path_to_model):
@@ -208,6 +251,7 @@ def test(env, path_to_model):
         print(f"Pendulum Roll, Pitch, Yaw: ({pendulum_euler[0]:.4f}, {pendulum_euler[1]:.4f}, {pendulum_euler[2]:.4f})")
         print(f"Wheel Velocity: {wheel_velocity:.4f}")
         print(f"Success Count: {info['success_count']}")
+        print(f"Strict Mode: {'On' if info['strict_mode'] else 'Off'}")
         print("------------------------------")
 
         if info.get('goal_reached', False):
