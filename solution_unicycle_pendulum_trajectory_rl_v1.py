@@ -9,6 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation
 import time
+from solution_unicycle_wrapper import SolutionWrapper
 
 # Create directories to hold models and logs
 model_dir = "models"
@@ -58,19 +59,6 @@ class UnicyclePendulumLogger(BaseCallback):
             self.current_trajectory = []
 
         return True
-
-# Environment wrapper to add bonus reward
-class RewardWrapper(gym.Wrapper):
-    def __init__(self, env, bonus_reward=100.0):
-        super().__init__(env)
-        self.bonus_reward = bonus_reward
-
-    def step(self, action):
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        if info.get('goal_reached', False):
-            reward += self.bonus_reward
-            print("Goal reached!")  # This will print during both training and testing
-        return obs, reward, terminated, truncated, info
 
 # Function to plot unicycle and pendulum positions and orientations
 def plot_unicycle_pendulum_position(logger, run_name):
@@ -158,7 +146,7 @@ def train(env):
     os.makedirs(best_model_path, exist_ok=True)
     
     # Create a separate environment for model evaluation
-    eval_env = RewardWrapper(gym.make('SolutionUnicyclePendulumTrajectory-v1', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS))
+    eval_env = SolutionWrapper(gym.make('SolutionUnicyclePendulumTrajectory-v1', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS))
     
     # Initialize the EvalCallback for saving the best model
     eval_callback = EvalCallback(
@@ -179,7 +167,7 @@ def train(env):
     # Initialize the SAC model
     model = SAC('MlpPolicy', env, verbose=1, device='cuda', tensorboard_log=log_dir)
 
-    # Train the model until 1000 successes are achieved
+    # Train the model until 10 successes are achieved (changed from 1000)
     total_timesteps = 0
     start_time = time.time()
     prev_success_count = 0
@@ -192,17 +180,16 @@ def train(env):
         new_successes = current_success_count - prev_success_count
         
         print(f"Total timesteps: {total_timesteps}, Total Successes: {current_success_count}, New Successes: {new_successes}")
-        print(f"Strict Mode: {'On' if unicycle_pendulum_logger.strict_mode_states[-1] else 'Off'}")
         
         if new_successes > 0:
             print(f"Goal reached! New success count: {new_successes}")
         
         prev_success_count = current_success_count
 
-        if current_success_count >= 1000:
+        if current_success_count >= 10:  # Changed from 1000 to 10
             end_time = time.time()
             training_time = end_time - start_time
-            print(f"\nTraining completed! 1000 successes achieved.")
+            print(f"\nTraining completed! 10 successes achieved.")
             print(f"Total training time: {training_time:.2f} seconds")
             print(f"Total timesteps: {total_timesteps}")
             break
@@ -278,7 +265,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Create and wrap the environment
-    gymenv = RewardWrapper(gym.make('SolutionUnicyclePendulumTrajectory-v1', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS))
+    gymenv = SolutionWrapper(gym.make('SolutionUnicyclePendulumTrajectory-v1', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS))
 
     if args.train:
         train(gymenv)
@@ -286,7 +273,7 @@ if __name__ == '__main__':
     if args.test:
         if os.path.isfile(args.test):
             # For testing, use render_mode='human'
-            test_env = RewardWrapper(gym.make('SolutionUnicyclePendulumTrajectory-v1', render_mode='human', max_episode_steps=MAX_EPISODE_STEPS))
+            test_env = SolutionWrapper(gym.make('SolutionUnicyclePendulumTrajectory-v1', render_mode='human', max_episode_steps=MAX_EPISODE_STEPS))
             test(test_env, path_to_model=args.test)
         else:
             print(f'{args.test} not found.')
