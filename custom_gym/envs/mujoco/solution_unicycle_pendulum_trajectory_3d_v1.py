@@ -17,12 +17,12 @@ DEFAULT_CAMERA_CONFIG = {
 class SolutionUnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
     """
     ## V1 version applies solution to the student agent.
-    ## Now student agent should be able to learn how to ride unicylce faster.
+    ## Now, student agent should be able to learn how to ride unicylce faster.
+    ## With existing environment, use solution_unicycle_wrapper.py wrapper to apply solution model to the student agent.
 
     ## Description
     This environment simulates a unicycle with an inverted pendulum attached to it. 
     The goal is to balance both the unicycle and the pendulum while moving the unicycle forward for 12 meters along the x-axis.
-    After training, this model will be used as an ideal solution of Unicycle Trajectory Model.
 
     ## Action Space
     The agent takes a 3-element vector for actions.
@@ -31,6 +31,8 @@ class SolutionUnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
     | 0   | Torque applied on the wheel      | -1          | 1           | wheel_motor        | wheel_joint  | torque (N m) |
     | 1   | Roll stabilization torque        | -1          | 1           | roll_stabilizer    | free_joint   | torque (N m) |
     | 2   | Yaw control torque               | -1          | 1           | yaw_control        | free_joint   | torque (N m) |
+    
+    Solution model will take action based on the environment after student's action taken
 
     ## Observation Space
     The observation consists of:
@@ -67,6 +69,7 @@ class SolutionUnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
     - A penalty for tilting (both the unicycle and the pendulum)
     - A penalty for excessive wheel speed
     - A large bonus for reaching the 12-meter goal
+    Solution model doesn't have separated rewards
 
     ## Starting State
     The unicycle starts near the origin with a slightly random position and orientation.
