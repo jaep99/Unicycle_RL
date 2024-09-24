@@ -20,135 +20,111 @@ os.makedirs(log_dir, exist_ok=True)
 # Maximum number of steps per episode
 MAX_EPISODE_STEPS = 10000
 
-# Custom callback to log unicycle and pendulum positions and orientations
-class UnicyclePendulumLogger(BaseCallback):
-    def __init__(self, verbose=0):
-        super(UnicyclePendulumLogger, self).__init__(verbose)
+class UnicyclePositionLogger(BaseCallback):
+    def __init__(self, best_model_path, verbose=0):
+        super(UnicyclePositionLogger, self).__init__(verbose)
+        self.best_model_path = best_model_path
         self.unicycle_positions = []
-        self.unicycle_roll_pitch_yaw = []
-        self.pendulum_roll_pitch_yaw = []
-        self.wheel_velocities = []
+        self.student_actions = []
+        self.solution_actions = []
         self.timesteps = []
+        self.episode_starts = []
+        self.current_episode_step = 0
+        self.success_timesteps = []
         self.success_counts = []
-        self.strict_mode_states = []
-        self.success_trajectories = []
-        self.current_trajectory = []
 
     def _on_step(self) -> bool:
         obs = self.locals['new_obs'][0]
         info = self.locals['infos'][0]
-        position = obs[:3]
-        self.unicycle_positions.append(position)
-        self.current_trajectory.append(position)
+        self.unicycle_positions.append(obs[:3])
         
-        unicycle_quat = obs[3:7]
-        pendulum_quat = obs[7:11]
+        self.student_actions.append(info.get('student_action', [0, 0, 0]))
+        self.solution_actions.append(info.get('solution_action', [0, 0, 0]))
         
-        unicycle_euler = Rotation.from_quat(np.roll(unicycle_quat, -1)).as_euler('xyz')
-        pendulum_euler = Rotation.from_quat(np.roll(pendulum_quat, -1)).as_euler('xyz')
-        
-        self.unicycle_roll_pitch_yaw.append(unicycle_euler)
-        self.pendulum_roll_pitch_yaw.append(pendulum_euler)
-        self.wheel_velocities.append(obs[21])
         self.timesteps.append(self.num_timesteps)
-        self.success_counts.append(info['success_count'])
-        self.strict_mode_states.append(info['strict_mode'])
-
+        self.current_episode_step += 1
+        
         if info.get('goal_reached', False):
-            self.success_trajectories.append(np.array(self.current_trajectory))
-            self.current_trajectory = []
-
+            self.success_timesteps.append(self.num_timesteps)
+            self.success_counts.append(len(self.success_timesteps))
+        
+        if self.locals['dones'][0]:
+            self.episode_starts.append(self.num_timesteps)
+            self.current_episode_step = 0
+        
         return True
 
-# Function to plot unicycle and pendulum positions and orientations
-def plot_unicycle_pendulum_position(logger, run_name):
-    fig = plt.figure(figsize=(20, 15))
+def plot_unicycle_position(logger, run_name, iteration):
+    fig = plt.figure(figsize=(20, 20))
     
     # 3D plot
-    ax = fig.add_subplot(221, projection='3d')
+    ax = fig.add_subplot(321, projection='3d')
     positions = np.array(logger.unicycle_positions)
     ax.plot(positions[:, 0], positions[:, 1], positions[:, 2])
-    ax.set_title(f'Unicycle 3D Movement')
+    ax.set_title(f'Unicycle 3D Movement (Iteration {iteration})')
     ax.set_xlabel('X Position')
     ax.set_ylabel('Y Position')
     ax.set_zlabel('Z Position')
     
     # Top-down view
-    ax = fig.add_subplot(222)
+    ax = fig.add_subplot(322)
     ax.plot(positions[:, 0], positions[:, 1])
-    ax.set_title(f'Unicycle Movement (Top-down view)')
+    ax.set_title(f'Unicycle Movement (Top-down view, Iteration {iteration})')
     ax.set_xlabel('X Position')
     ax.set_ylabel('Y Position')
     ax.axis('equal')
     
-    # Unicycle and Pendulum roll, pitch and yaw
-    ax = fig.add_subplot(223)
-    unicycle_roll_pitch_yaw = np.array(logger.unicycle_roll_pitch_yaw)
-    pendulum_roll_pitch_yaw = np.array(logger.pendulum_roll_pitch_yaw)
-    ax.plot(logger.timesteps, unicycle_roll_pitch_yaw, linestyle='-')
-    ax.plot(logger.timesteps, pendulum_roll_pitch_yaw, linestyle='--')
-    ax.set_title('Unicycle and Pendulum Roll, Pitch and Yaw')
+    # Student's actions
+    ax = fig.add_subplot(323)
+    student_actions = np.array(logger.student_actions)
+    for i, start in enumerate(logger.episode_starts):
+        end = logger.episode_starts[i+1] if i+1 < len(logger.episode_starts) else len(logger.timesteps)
+        ax.plot(logger.timesteps[start:end], student_actions[start:end])
+    ax.set_title('Student Actions')
     ax.set_xlabel('Timesteps')
-    ax.set_ylabel('Angle (radians)')
-    ax.legend(['Unicycle Roll', 'Unicycle Pitch', 'Unicycle Yaw', 
-               'Pendulum Roll', 'Pendulum Pitch', 'Pendulum Yaw'])
+    ax.set_ylabel('Action Values')
+    ax.legend(['Action 1', 'Action 2', 'Action 3'])
 
-    # Success count and Strict Mode
-    ax = fig.add_subplot(224)
-    ax.plot(logger.timesteps, logger.success_counts)
-    ax.set_title('Cumulative Success Count and Strict Mode')
+    # Solution's actions
+    ax = fig.add_subplot(324)
+    solution_actions = np.array(logger.solution_actions)
+    for i, start in enumerate(logger.episode_starts):
+        end = logger.episode_starts[i+1] if i+1 < len(logger.episode_starts) else len(logger.timesteps)
+        ax.plot(logger.timesteps[start:end], solution_actions[start:end])
+    ax.set_title('Solution Actions')
+    ax.set_xlabel('Timesteps')
+    ax.set_ylabel('Action Values')
+    ax.legend(['Action 1', 'Action 2', 'Action 3'])
+
+    # Success count
+    ax = fig.add_subplot(325)
+    ax.scatter(logger.success_timesteps, logger.success_counts, color='red', marker='o')
+    ax.set_title('Cumulative Success Count')
     ax.set_xlabel('Timesteps')
     ax.set_ylabel('Number of Successes')
+    ax.grid(True)
 
-    # Add strict mode indicator
-    strict_mode_start = next((i for i, mode in enumerate(logger.strict_mode_states) if mode), None)
-    if strict_mode_start is not None:
-        ax.axvline(x=logger.timesteps[strict_mode_start], color='r', linestyle='--', label='Strict Mode Start')
-        ax.legend()
+    # Ensure all plots have the same x-axis range
+    max_timestep = max(logger.timesteps)
+    for subplot in fig.axes:
+        subplot.set_xlim([0, max_timestep])
 
     plt.tight_layout()
     
-    save_path = os.path.join(log_dir, f'{run_name}_analysis.png')
+    save_path = os.path.join(logger.best_model_path, f'unicycle_analysis_iter_{iteration}.png')
     plt.savefig(save_path)
     print(f"Plot saved to: {save_path}")
     plt.close()
 
-# Function to plot success trajectories
-def plot_success_trajectories(logger, run_name):
-    fig = plt.figure(figsize=(20, 15))
-    ax = fig.add_subplot(111, projection='3d')
-
-    # Plot every 50th successful trajectory
-    for i, trajectory in enumerate(logger.success_trajectories[::50]):
-        xs, ys, zs = trajectory.T
-        ax.plot(xs, ys, zs, label=f'Success {i*50+1}')
-
-    ax.set_xlabel('X Position')
-    ax.set_ylabel('Y Position')
-    ax.set_zlabel('Z Position')
-    ax.set_title('Successful Trajectories (every 50th)')
-    ax.legend()
-
-    plt.tight_layout()
-    save_path = os.path.join(log_dir, f'{run_name}_success_trajectories.png')
-    plt.savefig(save_path)
-    print(f"Success trajectories plot saved to: {save_path}")
-    plt.close()
-
-# Main training function
 def train(env):
-    # Generate a unique timestamp for this training run
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     run_name = f"SAC_{timestamp}"
     
-    # Set the path for saving the best model
     best_model_path = f"{model_dir}/best_{run_name}"
     os.makedirs(best_model_path, exist_ok=True)
     
-    # Create a separate environment for model evaluation
     eval_env = SolutionWrapper(gym.make('SolutionUnicyclePendulumTrajectory-v1', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS))
     
-    # Initialize the EvalCallback for saving the best model
     eval_callback = EvalCallback(
         eval_env, 
         best_model_save_path=best_model_path,
@@ -158,16 +134,12 @@ def train(env):
         render=False,
     )
 
-    # Initialize the UnicyclePendulumLogger
-    unicycle_pendulum_logger = UnicyclePendulumLogger()
+    unicycle_logger = UnicyclePositionLogger(best_model_path)
     
-    # Combine callbacks
-    callbacks = [eval_callback, unicycle_pendulum_logger]
+    callbacks = [eval_callback, unicycle_logger]
 
-    # Initialize the SAC model
     model = SAC('MlpPolicy', env, verbose=1, device='cuda', tensorboard_log=log_dir)
 
-    # Train the model until 10 successes are achieved (changed from 1000)
     total_timesteps = 0
     start_time = time.time()
     prev_success_count = 0
@@ -176,7 +148,7 @@ def train(env):
         model.learn(total_timesteps=10000, reset_num_timesteps=False, tb_log_name=run_name, callback=callbacks)
         total_timesteps += 10000
         
-        current_success_count = unicycle_pendulum_logger.success_counts[-1] if unicycle_pendulum_logger.success_counts else 0
+        current_success_count = env.env.success_count  # Access the unwrapped environment
         new_successes = current_success_count - prev_success_count
         
         print(f"Total timesteps: {total_timesteps}, Total Successes: {current_success_count}, New Successes: {new_successes}")
@@ -186,7 +158,7 @@ def train(env):
         
         prev_success_count = current_success_count
 
-        if current_success_count >= 10:  # Changed from 1000 to 10
+        if current_success_count >= 10:
             end_time = time.time()
             training_time = end_time - start_time
             print(f"\nTraining completed! 10 successes achieved.")
@@ -194,18 +166,11 @@ def train(env):
             print(f"Total timesteps: {total_timesteps}")
             break
 
-    # Save the final model
     model.save(f"{model_dir}/{run_name}_final")
 
-    # Generate and save the unicycle and pendulum position plot
-    plot_unicycle_pendulum_position(unicycle_pendulum_logger, run_name)
+    plot_unicycle_position(unicycle_logger, run_name, total_timesteps // 10000)
 
-    # Generate and save the success trajectories plot
-    plot_success_trajectories(unicycle_pendulum_logger, run_name)
-
-# Function to test the trained model
 def test(env, path_to_model):
-    # Load the SAC model
     model = SAC.load(path_to_model, env=env)
 
     obs, _ = env.reset()
@@ -214,7 +179,6 @@ def test(env, path_to_model):
     step_count = 0
     success_count = 0
     
-    # Run the episode
     while not (terminated or truncated) and step_count < MAX_EPISODE_STEPS:
         action, _ = model.predict(obs)
         obs, reward, terminated, truncated, info = env.step(action)
@@ -238,13 +202,11 @@ def test(env, path_to_model):
         print(f"Pendulum Roll, Pitch, Yaw: ({pendulum_euler[0]:.4f}, {pendulum_euler[1]:.4f}, {pendulum_euler[2]:.4f})")
         print(f"Wheel Velocity: {wheel_velocity:.4f}")
         print(f"Success Count: {info['success_count']}")
-        print(f"Strict Mode: {'On' if info['strict_mode'] else 'Off'}")
         print("------------------------------")
 
         if info.get('goal_reached', False):
             success_count += 1
     
-    # Print episode summary
     print(f"\nEpisode finished after {step_count} steps")
     print(f"Total reward: {total_reward}")
     print(f"Average reward per step: {total_reward / step_count}")
@@ -258,13 +220,11 @@ def test(env, path_to_model):
         print("Episode ended by truncation (max steps reached).")
 
 if __name__ == '__main__':
-    # Parse command line arguments
     parser = argparse.ArgumentParser(description='Train or test SAC model.')
     parser.add_argument('-train', '--train', action='store_true')
     parser.add_argument('-test', '--test', metavar='path_to_model')
     args = parser.parse_args()
 
-    # Create and wrap the environment
     gymenv = SolutionWrapper(gym.make('SolutionUnicyclePendulumTrajectory-v1', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS))
 
     if args.train:
@@ -272,7 +232,6 @@ if __name__ == '__main__':
 
     if args.test:
         if os.path.isfile(args.test):
-            # For testing, use render_mode='human'
             test_env = SolutionWrapper(gym.make('SolutionUnicyclePendulumTrajectory-v1', render_mode='human', max_episode_steps=MAX_EPISODE_STEPS))
             test(test_env, path_to_model=args.test)
         else:
