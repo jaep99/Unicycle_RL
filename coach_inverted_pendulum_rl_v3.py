@@ -115,9 +115,13 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         super(InvertedPendulum3DEnvWithCoach, self).__init__(env)
         self.coach_agent = coach_agent
         self._render_mode = render_mode
-        self.student_rewards = []
-        self.coach_rewards = []
-        self.timesteps = []
+        # Move these outside of __init__ to ensure persistence between episodes
+        if not hasattr(self, 'student_rewards'):
+            self.student_rewards = []
+        if not hasattr(self, 'coach_rewards'):
+            self.coach_rewards = []
+        if not hasattr(self, 'timesteps'):
+            self.timesteps = []
 
         self.current_episode_reward = 0  # Track the student's current episode reward
         self.previous_episode_reward = None  # Track the student's previous episode reward
@@ -131,6 +135,7 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         
         # Reset the current episode reward
         self.current_episode_reward = 0
+        self.step_count = 0
         
         self.coach_total_rewards = 0
         #self.coach_rewards = []
@@ -183,8 +188,8 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         # print(f"Current Coach Rewards: {self.coach_rewards}")
 
         # Print debug information
-        print(f"Step {self.env.unwrapped.step_count} - Student Reward: {student_reward}, Coach Reward: {coach_reward}")
-        print(f"Total Student Rewards Collected: {len(self.student_rewards)}, Total Coach Rewards Collected: {len(self.coach_rewards)}")
+        #print(f"Step {self.env.unwrapped.step_count} - Student Reward: {student_reward}, Coach Reward: {coach_reward}")
+        #print(f"Total Student Rewards Collected: {len(self.student_rewards)}, Total Coach Rewards Collected: {len(self.coach_rewards)}")
         if terminated:
             # Create combined observation for replay buffer (observation + action)
             #combined_observation = np.concatenate([observation, action])
@@ -282,7 +287,7 @@ def train(env, sb3_algo, plot_update_interval=1000):
     plt.show(block=False)  # Non-blocking show
     print("Matplotlib setup complete", flush=True)
 
-    plotting_callback = PlottingCallback(wrapped_env, ax1, ax2, fig, update_freq=1000)
+    plotting_callback = PlottingCallback(wrapped_env, ax1, ax2, fig, update_freq=50)
 
     #Combine both callbacks
     combined_callbacks = [eval_callback, plotting_callback]
@@ -325,27 +330,36 @@ def train(env, sb3_algo, plot_update_interval=1000):
     
 
 def update_plot(wrapped_env, ax1, ax2, fig):
-    if not wrapped_env.student_rewards or not wrapped_env.timesteps:
-        print("No data to plot yet.")
-        return  # Skip plotting if no data
-    
+    # Ensure there is enough data to plot
+    if len(wrapped_env.student_rewards) < 10 or len(wrapped_env.timesteps) < 10:
+        print("Not enough data to plot yet.")
+        print(f"Current Student Rewards Length: {len(wrapped_env.student_rewards)}")
+        print(f"Current Timesteps Length: {len(wrapped_env.timesteps)}")
+        return  # Skip plotting if not enough data
+
     print("Updating plot with data:", flush=True)
-    print(f"Student Rewards: {wrapped_env.student_rewards}", flush=True)
-    print(f"Coach Rewards: {wrapped_env.coach_rewards}", flush=True)
-    print(f"Timesteps: {wrapped_env.timesteps}", flush=True)
-    
+    print(f"Student Rewards: {wrapped_env.student_rewards[-5:]}")  # Check last few entries
+    print(f"Coach Rewards: {wrapped_env.coach_rewards[-5:]}")      # Check last few entries
+    print(f"Timesteps: {wrapped_env.timesteps[-5:]}")
+
+    # Remove duplicates and sort data
+    unique_timesteps, unique_indices = np.unique(wrapped_env.timesteps, return_index=True)
+    unique_student_rewards = np.array(wrapped_env.student_rewards)[unique_indices]
+    unique_coach_rewards = np.array(wrapped_env.coach_rewards)[unique_indices]
+
     # Clear previous data
     ax1.clear()
     ax2.clear()
     
-    ax1.plot(wrapped_env.timesteps, wrapped_env.student_rewards, label='Student Reward')
+    # Plot using unique and sorted data
+    ax1.plot(unique_timesteps, unique_student_rewards, label='Student Reward')
     ax1.set_xlabel('Timestep')
     ax1.set_ylabel('Reward')
     ax1.set_title('Student Reward over Time')
     ax1.legend()
 
     # Plot Coach rewards
-    ax2.plot(wrapped_env.timesteps, wrapped_env.coach_rewards, label='Coach Reward', color='r')
+    ax2.plot(unique_timesteps, unique_coach_rewards, label='Coach Reward', color='r')
     ax2.set_xlabel('Timestep')
     ax2.set_ylabel('Reward')
     ax2.set_title('Coach Reward over Time')
@@ -355,6 +369,7 @@ def update_plot(wrapped_env, ax1, ax2, fig):
     # Force update of the canvas
     fig.canvas.draw()
     fig.canvas.flush_events()
+    plt.pause(0.1) 
 
 
 def test(env, sb3_algo, path_to_model):
