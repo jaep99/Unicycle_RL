@@ -28,10 +28,9 @@ class UnicyclePositionLogger(BaseCallback):
         self.student_actions = []
         self.solution_actions = []
         self.timesteps = []
-        self.episode_starts = []
-        self.current_episode_step = 0
         self.success_timesteps = []
         self.success_counts = []
+        self.total_successes = 0
 
     def _on_step(self) -> bool:
         obs = self.locals['new_obs'][0]
@@ -42,15 +41,11 @@ class UnicyclePositionLogger(BaseCallback):
         self.solution_actions.append(info.get('solution_action', [0, 0, 0]))
         
         self.timesteps.append(self.num_timesteps)
-        self.current_episode_step += 1
         
         if info.get('goal_reached', False):
+            self.total_successes += 1
             self.success_timesteps.append(self.num_timesteps)
-            self.success_counts.append(len(self.success_timesteps))
-        
-        if self.locals['dones'][0]:
-            self.episode_starts.append(self.num_timesteps)
-            self.current_episode_step = 0
+            self.success_counts.append(self.total_successes)
         
         return True
 
@@ -65,6 +60,7 @@ def plot_unicycle_position(logger, run_name, iteration):
     ax.set_xlabel('X Position')
     ax.set_ylabel('Y Position')
     ax.set_zlabel('Z Position')
+    ax.set_xlim(0, 12)  # Set x-axis limit to 0-12 meters
     
     # Top-down view
     ax = fig.add_subplot(322)
@@ -72,14 +68,13 @@ def plot_unicycle_position(logger, run_name, iteration):
     ax.set_title(f'Unicycle Movement (Top-down view, Iteration {iteration})')
     ax.set_xlabel('X Position')
     ax.set_ylabel('Y Position')
+    ax.set_xlim(0, 12)  # Set x-axis limit to 0-12 meters
     ax.axis('equal')
     
     # Student's actions
     ax = fig.add_subplot(323)
     student_actions = np.array(logger.student_actions)
-    for i, start in enumerate(logger.episode_starts):
-        end = logger.episode_starts[i+1] if i+1 < len(logger.episode_starts) else len(logger.timesteps)
-        ax.plot(logger.timesteps[start:end], student_actions[start:end])
+    ax.plot(logger.timesteps, student_actions)
     ax.set_title('Student Actions')
     ax.set_xlabel('Timesteps')
     ax.set_ylabel('Action Values')
@@ -88,9 +83,7 @@ def plot_unicycle_position(logger, run_name, iteration):
     # Solution's actions
     ax = fig.add_subplot(324)
     solution_actions = np.array(logger.solution_actions)
-    for i, start in enumerate(logger.episode_starts):
-        end = logger.episode_starts[i+1] if i+1 < len(logger.episode_starts) else len(logger.timesteps)
-        ax.plot(logger.timesteps[start:end], solution_actions[start:end])
+    ax.plot(logger.timesteps, solution_actions)
     ax.set_title('Solution Actions')
     ax.set_xlabel('Timesteps')
     ax.set_ylabel('Action Values')
@@ -104,9 +97,9 @@ def plot_unicycle_position(logger, run_name, iteration):
     ax.set_ylabel('Number of Successes')
     ax.grid(True)
 
-    # Ensure all plots have the same x-axis range
+    # Ensure all plots have the same x-axis range for timestep-based plots
     max_timestep = max(logger.timesteps)
-    for subplot in fig.axes:
+    for subplot in [fig.axes[2], fig.axes[3], fig.axes[4]]:  # Only adjust timestep-based plots
         subplot.set_xlim([0, max_timestep])
 
     plt.tight_layout()

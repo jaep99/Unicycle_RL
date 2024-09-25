@@ -17,7 +17,6 @@ class SolutionWrapper(gym.Wrapper):
         
         self.solution_model = SAC.load(solution_model_path)
         self.first_success = False
-        self.episode_first_success = False
 
     def find_unicycle_rl_dir(self, start_path):
         for root, dirs, files in os.walk(start_path):
@@ -26,13 +25,11 @@ class SolutionWrapper(gym.Wrapper):
         return None
 
     def reset(self, **kwargs):
-        self.episode_first_success = False
         return self.env.reset(**kwargs)
 
     def step(self, action):
-        obs, student_reward, terminated, truncated, info = self.env.step(action)
-        
-        if not self.episode_first_success:
+        if not self.first_success:
+            obs, student_reward, terminated, truncated, info = self.env.step(action)
             solution_action, _ = self.solution_model.predict(obs, deterministic=True)
             new_obs, solution_reward, new_terminated, new_truncated, new_info = self.env.step(solution_action)
             
@@ -43,22 +40,16 @@ class SolutionWrapper(gym.Wrapper):
             truncated = truncated or new_truncated
             info.update(new_info)
         else:
-            combined_reward = student_reward
+            obs, combined_reward, terminated, truncated, info = self.env.step(action)
             solution_action = [0, 0, 0]  # No action from solution model
 
         info.update({
             'student_action': action,
             'solution_action': solution_action,
-            'student_reward': student_reward,
-            'solution_reward': solution_reward if not self.episode_first_success else 0,
         })
 
         if info.get('goal_reached', False) and not self.first_success:
             self.first_success = True
-            self.episode_first_success = True
             print("First success achieved! Now training without solution intervention.")
-        
-        if info.get('goal_reached', False):
-            self.episode_first_success = True
 
         return obs, combined_reward, terminated, truncated, info
