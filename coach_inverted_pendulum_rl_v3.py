@@ -122,6 +122,10 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
             self.coach_rewards = []
         if not hasattr(self, 'timesteps'):
             self.timesteps = []
+        
+        self.episode_student_rewards = []  # Store rewards for each episode
+        self.episode_coach_rewards = []    # Store rewards for each episode
+        self.episode_count = 0
 
         self.current_episode_reward = 0  # Track the student's current episode reward
         self.previous_episode_reward = None  # Track the student's previous episode reward
@@ -140,6 +144,20 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         self.coach_total_rewards = 0
         #self.coach_rewards = []
         # Optional: Print statements to check
+
+        # Log mean rewards per episode
+        if len(self.episode_student_rewards) > 0:
+            mean_student_reward = np.mean(self.episode_student_rewards)
+            mean_coach_reward = np.mean(self.episode_coach_rewards)
+            self.student_rewards.append(mean_student_reward)
+            self.coach_rewards.append(mean_coach_reward)
+            self.timesteps.append(self.episode_count)
+
+            # Reset episode accumulators
+            self.episode_student_rewards = []
+            self.episode_coach_rewards = []
+            self.episode_count += 1
+
         print(f"Reset called. Student Rewards Length: {len(self.student_rewards)}")
         print(f"Reset called. Coach Rewards Length: {len(self.coach_rewards)}")
         return obs, info
@@ -331,7 +349,7 @@ def train(env, sb3_algo, plot_update_interval=1000):
 
 def update_plot(wrapped_env, ax1, ax2, fig):
     # Ensure there is enough data to plot
-    if len(wrapped_env.student_rewards) < 10 or len(wrapped_env.timesteps) < 10:
+    if len(wrapped_env.student_rewards) < 1 or len(wrapped_env.timesteps) < 1:
         print("Not enough data to plot yet.")
         print(f"Current Student Rewards Length: {len(wrapped_env.student_rewards)}")
         print(f"Current Timesteps Length: {len(wrapped_env.timesteps)}")
@@ -342,27 +360,26 @@ def update_plot(wrapped_env, ax1, ax2, fig):
     print(f"Coach Rewards: {wrapped_env.coach_rewards[-5:]}")      # Check last few entries
     print(f"Timesteps: {wrapped_env.timesteps[-5:]}")
 
-    # Remove duplicates and sort data
-    unique_timesteps, unique_indices = np.unique(wrapped_env.timesteps, return_index=True)
-    unique_student_rewards = np.array(wrapped_env.student_rewards)[unique_indices]
-    unique_coach_rewards = np.array(wrapped_env.coach_rewards)[unique_indices]
+    # # Remove duplicates and sort data
+    # unique_timesteps, unique_indices = np.unique(wrapped_env.timesteps, return_index=True)
+    # unique_student_rewards = np.array(wrapped_env.student_rewards)[unique_indices]
+    # unique_coach_rewards = np.array(wrapped_env.coach_rewards)[unique_indices]
 
     # Clear previous data
     ax1.clear()
     ax2.clear()
     
-    # Plot using unique and sorted data
-    ax1.plot(unique_timesteps, unique_student_rewards, label='Student Reward')
-    ax1.set_xlabel('Timestep')
-    ax1.set_ylabel('Reward')
-    ax1.set_title('Student Reward over Time')
+    # Plot using episode mean data
+    ax1.plot(wrapped_env.timesteps, wrapped_env.student_rewards, label='Student Reward Mean')
+    ax1.set_xlabel('Episode')
+    ax1.set_ylabel('Mean Reward')
+    ax1.set_title('Student Mean Reward over Episodes')
     ax1.legend()
 
-    # Plot Coach rewards
-    ax2.plot(unique_timesteps, unique_coach_rewards, label='Coach Reward', color='r')
-    ax2.set_xlabel('Timestep')
-    ax2.set_ylabel('Reward')
-    ax2.set_title('Coach Reward over Time')
+    ax2.plot(wrapped_env.timesteps, wrapped_env.coach_rewards, label='Coach Reward Mean', color='r')
+    ax2.set_xlabel('Episode')
+    ax2.set_ylabel('Mean Reward')
+    ax2.set_title('Coach Mean Reward over Episodes')
     ax2.legend()
 
     # Redraw the plots
