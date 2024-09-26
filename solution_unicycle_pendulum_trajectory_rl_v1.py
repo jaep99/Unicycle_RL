@@ -50,10 +50,16 @@ class UnicyclePositionLogger(BaseCallback):
         return True
 
 def plot_unicycle_position(logger, run_name, iteration):
-    fig = plt.figure(figsize=(20, 20))
+    fig = plt.figure(figsize=(20, 30))
+    
+    action_names = [
+        "Wheel Torque",
+        "Roll Stabilization",
+        "Yaw Control"
+    ]
     
     # 3D plot
-    ax = fig.add_subplot(321, projection='3d')
+    ax = fig.add_subplot(421, projection='3d')
     positions = np.array(logger.unicycle_positions)
     ax.plot(positions[:, 0], positions[:, 1], positions[:, 2])
     ax.set_title(f'Unicycle 3D Movement (Iteration {iteration})')
@@ -63,7 +69,7 @@ def plot_unicycle_position(logger, run_name, iteration):
     ax.set_xlim(0, 12)  # Set x-axis limit to 0-12 meters
     
     # Top-down view
-    ax = fig.add_subplot(322)
+    ax = fig.add_subplot(422)
     ax.plot(positions[:, 0], positions[:, 1])
     ax.set_title(f'Unicycle Movement (Top-down view, Iteration {iteration})')
     ax.set_xlabel('X Position')
@@ -72,25 +78,27 @@ def plot_unicycle_position(logger, run_name, iteration):
     ax.axis('equal')
     
     # Student's actions
-    ax = fig.add_subplot(323)
     student_actions = np.array(logger.student_actions)
-    ax.plot(logger.timesteps, student_actions)
-    ax.set_title('Student Actions')
-    ax.set_xlabel('Timesteps')
-    ax.set_ylabel('Action Values')
-    ax.legend(['Action 1', 'Action 2', 'Action 3'])
+    for i in range(3):
+        ax = fig.add_subplot(423 + i)
+        ax.plot(logger.timesteps, student_actions[:, i])
+        ax.set_title(f'Student Action: {action_names[i]}')
+        ax.set_xlabel('Timesteps')
+        ax.set_ylabel('Torque (N m)')
+        ax.set_ylim(-1, 1)
 
     # Solution's actions
-    ax = fig.add_subplot(324)
     solution_actions = np.array(logger.solution_actions)
-    ax.plot(logger.timesteps, solution_actions)
-    ax.set_title('Solution Actions')
-    ax.set_xlabel('Timesteps')
-    ax.set_ylabel('Action Values')
-    ax.legend(['Action 1', 'Action 2', 'Action 3'])
+    for i in range(3):
+        ax = fig.add_subplot(426 + i)
+        ax.plot(logger.timesteps, solution_actions[:, i])
+        ax.set_title(f'Solution Action: {action_names[i]}')
+        ax.set_xlabel('Timesteps')
+        ax.set_ylabel('Torque (N m)')
+        ax.set_ylim(-1, 1)
 
     # Success count
-    ax = fig.add_subplot(325)
+    ax = fig.add_subplot(4,2,8)
     ax.scatter(logger.success_timesteps, logger.success_counts, color='red', marker='o')
     ax.set_title('Cumulative Success Count')
     ax.set_xlabel('Timesteps')
@@ -99,7 +107,7 @@ def plot_unicycle_position(logger, run_name, iteration):
 
     # Ensure all plots have the same x-axis range for timestep-based plots
     max_timestep = max(logger.timesteps)
-    for subplot in [fig.axes[2], fig.axes[3], fig.axes[4]]:  # Only adjust timestep-based plots
+    for subplot in fig.axes[2:]:  # Adjust all timestep-based plots
         subplot.set_xlim([0, max_timestep])
 
     plt.tight_layout()
