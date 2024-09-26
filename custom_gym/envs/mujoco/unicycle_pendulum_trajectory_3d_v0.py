@@ -16,8 +16,13 @@ DEFAULT_CAMERA_CONFIG = {
 
 class UnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
     """
+    ## V1 version applies solution to the student agent.
+    ## Now, student agent should be able to learn how to ride unicylce faster.
+    ## With existing environment, use solution_unicycle_wrapper.py wrapper to apply solution model to the student agent.
+
     ## Description
-    This environment simulates a unicycle with an inverted pendulum attached to it. The goal is to balance both the unicycle and the pendulum while moving the unicycle forward for 12 meters along the x-axis.
+    This environment simulates a unicycle with an inverted pendulum attached to it. 
+    The goal is to balance both the unicycle and the pendulum while moving the unicycle forward for 12 meters along the x-axis.
 
     ## Action Space
     The agent takes a 3-element vector for actions.
@@ -26,6 +31,8 @@ class UnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
     | 0   | Torque applied on the wheel      | -1          | 1           | wheel_motor        | wheel_joint  | torque (N m) |
     | 1   | Roll stabilization torque        | -1          | 1           | roll_stabilizer    | free_joint   | torque (N m) |
     | 2   | Yaw control torque               | -1          | 1           | yaw_control        | free_joint   | torque (N m) |
+    
+    Solution model will take action based on the environment after student's action taken
 
     ## Observation Space
     The observation consists of:
@@ -62,6 +69,7 @@ class UnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
     - A penalty for tilting (both the unicycle and the pendulum)
     - A penalty for excessive wheel speed
     - A large bonus for reaching the 12-meter goal
+    Solution model doesn't have separated rewards
 
     ## Starting State
     The unicycle starts near the origin with a slightly random position and orientation.
@@ -71,10 +79,11 @@ class UnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
     1. The unicycle falls over (excessive tilt)
     2. The pendulum falls over (excessive tilt)
     3. The unicycle reaches the 12-meter goal
-    4. The maximum number of steps is reached
+    4. The maximum number of steps is reached (10,000 steps)
 
     ## Solved Requirement
     The environment is considered solved when the agent can consistently move the unicycle 12 meters forward while maintaining balance.
+    To obtain the ideal model, training will be end once the unicycle agent passed 12 meters 100 times.
     """
 
     metadata = {
@@ -91,7 +100,7 @@ class UnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
         frame_skip: int = 2,
         default_camera_config: Dict[str, Union[float, int, np.ndarray]] = DEFAULT_CAMERA_CONFIG,
         reset_noise_scale: float = 0.01,
-        max_steps: int = 30000,
+        max_steps: int = 10000,
         **kwargs,
     ):
         if xml_file is None:
@@ -103,8 +112,13 @@ class UnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
         self.action_space = Box(low=-1, high=1, shape=(3,), dtype=np.float32)
         self._reset_noise_scale = reset_noise_scale
         self.max_steps = max_steps
-        self.steps = 0
+        self.success_count = 0
+        self.required_successes = 100
         self.goal_distance = 12.0  # 12 meters goal
+        self.prev_x = 0
+        self.goal_reached = False
+        self.strict_mode = False
+        self.strict_mode_threshold = 100 # Activate after reaching goal 100 times
 
         MujocoEnv.__init__(
             self,
@@ -129,6 +143,20 @@ class UnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
         self.steps += 1
         
         observation = self._get_obs()
+
+        x_pos = observation[0] # x position of the unicycle
+        y_pos = observation[1] # y position of the unicycle
+        
+        # Check if the unicycle passed the 12-meter mark
+        if self.prev_x < 12 and x_pos >= 12:
+            self.success_count += 1
+            self.goal_reached = True
+            
+            # Activate after reaching goal 100 times
+            if self.success_count >= self.strict_mode_threshold:
+                self.strict_mode = True
+        
+        self.prev_x = x_pos
         
         # Extract quaternions and convert to euler angles
         unicycle_quat = observation[3:7]  # Unicycle quaternion (wxyz)
@@ -140,37 +168,46 @@ class UnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
         unicycle_roll, unicycle_pitch, _ = unicycle_euler
         pendulum_roll, pendulum_pitch, _ = pendulum_euler
         
-        # Compute balancing reward (reduced weight)
+        # Compute balancing reward (reduced)
         balance_reward = 0.5 * (1.0 - 0.5 * (unicycle_roll**2 + unicycle_pitch**2 + pendulum_roll**2 + pendulum_pitch**2))
         
-        # Compute forward movement reward (increased weight)
-        forward_reward = 2.0 * observation[0]  # x-position, doubled the weight
+        # Compute forward movement reward (increased)
+        forward_reward = 2.0 * x_pos
+        if self.strict_mode:
+            forward_reward = 3.0 * x_pos  # (increased)
         
         # Add velocity reward to encourage continuous forward motion
         velocity_reward = observation[12]  # x-velocity
         
-        # Penalize excessive tilt (slightly reduced)
+        # Penalize excessive tilt (reduced)
         tilt_penalty = -5.0 if (abs(unicycle_roll) > np.pi/4 or abs(unicycle_pitch) > np.pi/4 or
                                 abs(pendulum_roll) > np.pi/4 or abs(pendulum_pitch) > np.pi/4) else 0.0
         
-        # Penalize excessive wheel speed (slightly reduced)
+        # Penalize excessive wheel speed (reduced)
         wheel_speed_penalty = -0.05 * observation[21]**2  # Last element is wheel angular velocity
         
+        y_penalty = -0.5 * abs(y_pos)
+        
         # Compute total reward
-        reward = balance_reward + forward_reward + velocity_reward + tilt_penalty + wheel_speed_penalty
+        reward = balance_reward + forward_reward + velocity_reward + tilt_penalty + wheel_speed_penalty + y_penalty
         
         # Check goal condition
-        goal_reached = observation[0] >= self.goal_distance
-        if goal_reached:
+        if self.goal_reached:
             reward += 100  # Large bonus for reaching the goal
         
+        terminated = False
+        if self.strict_mode and abs(y_pos) > 1.0:
+            reward -= 10 
+            terminated = True
+        
         # Check termination conditions
-        terminated = bool(
+        terminated = terminated or bool(
             abs(unicycle_roll) > np.pi/3 or
             abs(unicycle_pitch) > np.pi/3 or
             abs(pendulum_roll) > np.pi/3 or
             abs(pendulum_pitch) > np.pi/3 or
-            goal_reached
+            self.goal_reached or
+            self.success_count >= 1000
         )
         
         truncated = bool(self.steps >= self.max_steps)
@@ -185,9 +222,13 @@ class UnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
             "velocity_reward": velocity_reward,
             "tilt_penalty": tilt_penalty,
             "wheel_speed_penalty": wheel_speed_penalty,
-            "x_position": observation[0],
-            "goal_reached": goal_reached,
+            "y_penalty": y_penalty,
+            "x_position": x_pos,
+            "y_position": y_pos,
+            "goal_reached": self.goal_reached,
             "steps": self.steps,
+            "success_count": self.success_count,
+            "strict_mode": self.strict_mode,
         }
         
         if self.render_mode == "human":
@@ -207,6 +248,8 @@ class UnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
         )
         self.set_state(qpos, qvel)
         self.steps = 0
+        self.prev_x = 0
+        self.goal_reached = False
         return self._get_obs()
 
     def _get_obs(self):

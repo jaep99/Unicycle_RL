@@ -1,5 +1,5 @@
 import gymnasium as gym
-from stable_baselines3 import SAC, TD3, A2C
+from stable_baselines3 import SAC
 import os
 import argparse
 import custom_gym.envs.mujoco
@@ -8,6 +8,8 @@ import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation
+import time
+from no_solution_unicycle_wrapper import NoSolutionWrapper
 
 # Create directories to hold models and logs
 model_dir = "models"
@@ -16,109 +18,114 @@ os.makedirs(model_dir, exist_ok=True)
 os.makedirs(log_dir, exist_ok=True)
 
 # Maximum number of steps per episode
-MAX_EPISODE_STEPS = 30000
+MAX_EPISODE_STEPS = 10000
 
-# Custom callback to log unicycle and pendulum positions and orientations
-class UnicyclePendulumLogger(BaseCallback):
+class UnicyclePositionLogger(BaseCallback):
     def __init__(self, best_model_path, verbose=0):
-        super(UnicyclePendulumLogger, self).__init__(verbose)
+        super(UnicyclePositionLogger, self).__init__(verbose)
         self.best_model_path = best_model_path
         self.unicycle_positions = []
-        self.unicycle_roll_pitch_yaw = []
-        self.pendulum_roll_pitch_yaw = []
-        self.wheel_velocities = []
+        self.student_actions = []
+        self.solution_actions = []
         self.timesteps = []
+        self.success_timesteps = []
+        self.success_counts = []
+        self.total_successes = 0
 
     def _on_step(self) -> bool:
         obs = self.locals['new_obs'][0]
+        info = self.locals['infos'][0]
         self.unicycle_positions.append(obs[:3])
         
-        unicycle_quat = obs[3:7]
-        pendulum_quat = obs[7:11]
+        self.student_actions.append(info.get('student_action', [0, 0, 0]))
+        self.solution_actions.append(info.get('solution_action', [0, 0, 0]))
         
-        unicycle_euler = Rotation.from_quat(np.roll(unicycle_quat, -1)).as_euler('xyz')
-        pendulum_euler = Rotation.from_quat(np.roll(pendulum_quat, -1)).as_euler('xyz')
-        
-        self.unicycle_roll_pitch_yaw.append(unicycle_euler)
-        self.pendulum_roll_pitch_yaw.append(pendulum_euler)
-        self.wheel_velocities.append(obs[21])  # Assuming wheel velocity is at index 21
         self.timesteps.append(self.num_timesteps)
+        
+        if info.get('goal_reached', False):
+            self.total_successes += 1
+            self.success_timesteps.append(self.num_timesteps)
+            self.success_counts.append(self.total_successes)
+        
         return True
 
-# Environment wrapper to add bonus reward
-class RewardWrapper(gym.Wrapper):
-    def __init__(self, env, bonus_reward=100.0):
-        super().__init__(env)
-        self.bonus_reward = bonus_reward
-
-    def step(self, action):
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        if info.get('goal_reached', False):
-            reward += self.bonus_reward
-            print("Goal reached!")  # This will print during both training and testing
-        return obs, reward, terminated, truncated, info
-
-# Function to plot unicycle and pendulum positions and orientations
-def plot_unicycle_pendulum_position(logger, run_name, iteration):
-    fig = plt.figure(figsize=(20, 15))
+def plot_unicycle_position(logger, run_name, iteration):
+    fig = plt.figure(figsize=(20, 30))
+    
+    action_names = [
+        "Wheel Torque",
+        "Roll Stabilization",
+        "Yaw Control"
+    ]
     
     # 3D plot
-    ax = fig.add_subplot(221, projection='3d')
+    ax = fig.add_subplot(421, projection='3d')
     positions = np.array(logger.unicycle_positions)
     ax.plot(positions[:, 0], positions[:, 1], positions[:, 2])
     ax.set_title(f'Unicycle 3D Movement (Iteration {iteration})')
     ax.set_xlabel('X Position')
     ax.set_ylabel('Y Position')
     ax.set_zlabel('Z Position')
+    ax.set_xlim(0, 12)  # Set x-axis limit to 0-12 meters
     
     # Top-down view
-    ax = fig.add_subplot(222)
+    ax = fig.add_subplot(422)
     ax.plot(positions[:, 0], positions[:, 1])
     ax.set_title(f'Unicycle Movement (Top-down view, Iteration {iteration})')
     ax.set_xlabel('X Position')
     ax.set_ylabel('Y Position')
+    ax.set_xlim(0, 12)  # Set x-axis limit to 0-12 meters
     ax.axis('equal')
     
-    # Unicycle and Pendulum roll, pitch and yaw
-    ax = fig.add_subplot(223)
-    unicycle_roll_pitch_yaw = np.array(logger.unicycle_roll_pitch_yaw)
-    pendulum_roll_pitch_yaw = np.array(logger.pendulum_roll_pitch_yaw)
-    ax.plot(logger.timesteps, unicycle_roll_pitch_yaw, linestyle='-')
-    ax.plot(logger.timesteps, pendulum_roll_pitch_yaw, linestyle='--')
-    ax.set_title('Unicycle and Pendulum Roll, Pitch and Yaw')
-    ax.set_xlabel('Timesteps')
-    ax.set_ylabel('Angle (radians)')
-    ax.legend(['Unicycle Roll', 'Unicycle Pitch', 'Unicycle Yaw', 
-               'Pendulum Roll', 'Pendulum Pitch', 'Pendulum Yaw'])
+    # Student's actions
+    student_actions = np.array(logger.student_actions)
+    for i in range(3):
+        ax = fig.add_subplot(423 + i)
+        ax.plot(logger.timesteps, student_actions[:, i])
+        ax.set_title(f'Student Action: {action_names[i]}')
+        ax.set_xlabel('Timesteps')
+        ax.set_ylabel('Torque (N m)')
+        ax.set_ylim(-1, 1)
 
-    # Wheel velocity
-    ax = fig.add_subplot(224)
-    ax.plot(logger.timesteps, logger.wheel_velocities)
-    ax.set_title('Wheel Velocity')
+    # Solution's actions
+    solution_actions = np.array(logger.solution_actions)
+    for i in range(3):
+        ax = fig.add_subplot(426 + i)
+        ax.plot(logger.timesteps, solution_actions[:, i])
+        ax.set_title(f'Solution Action: {action_names[i]}')
+        ax.set_xlabel('Timesteps')
+        ax.set_ylabel('Torque (N m)')
+        ax.set_ylim(-1, 1)
+
+    # Success count
+    ax = fig.add_subplot(4,2,8)
+    ax.scatter(logger.success_timesteps, logger.success_counts, color='red', marker='o')
+    ax.set_title('Cumulative Success Count')
     ax.set_xlabel('Timesteps')
-    ax.set_ylabel('Angular Velocity (rad/s)')
+    ax.set_ylabel('Number of Successes')
+    ax.grid(True)
+
+    # Ensure all plots have the same x-axis range for timestep-based plots
+    max_timestep = max(logger.timesteps)
+    for subplot in fig.axes[2:]:  # Adjust all timestep-based plots
+        subplot.set_xlim([0, max_timestep])
 
     plt.tight_layout()
     
-    save_path = os.path.join(logger.best_model_path, f'unicycle_pendulum_analysis_iter_{iteration}.png')
+    save_path = os.path.join(logger.best_model_path, f'unicycle_analysis_iter_{iteration}.png')
     plt.savefig(save_path)
     print(f"Plot saved to: {save_path}")
     plt.close()
 
-# Main training function
-def train(env, sb3_algo):
-    # Generate a unique timestamp for this training run
+def train(env):
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_name = f"{sb3_algo}_{timestamp}"
+    run_name = f"SAC_{timestamp}"
     
-    # Set the path for saving the best model
     best_model_path = f"{model_dir}/best_{run_name}"
     os.makedirs(best_model_path, exist_ok=True)
     
-    # Create a separate environment for model evaluation
-    eval_env = RewardWrapper(gym.make('UnicyclePendulumTrajectory-v0', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS))
+    eval_env = NoSolutionWrapper(gym.make('UnicyclePendulumTrajectory-v0', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS))
     
-    # Initialize the EvalCallback for saving the best model
     eval_callback = EvalCallback(
         eval_env, 
         best_model_save_path=best_model_path,
@@ -128,63 +135,51 @@ def train(env, sb3_algo):
         render=False,
     )
 
-    # Initialize the UnicyclePendulumLogger
-    unicycle_pendulum_logger = UnicyclePendulumLogger(best_model_path)
+    unicycle_logger = UnicyclePositionLogger(best_model_path)
     
-    # Combine callbacks
-    callbacks = [eval_callback, unicycle_pendulum_logger]
+    callbacks = [eval_callback, unicycle_logger]
 
-    # Initialize the appropriate learning algorithm
-    match sb3_algo:
-        case 'SAC':
-            model = SAC('MlpPolicy', env, verbose=1, device='cuda', tensorboard_log=log_dir)
-        case 'TD3':
-            model = TD3('MlpPolicy', env, verbose=1, device='cuda', tensorboard_log=log_dir)
-        case 'A2C':
-            model = A2C('MlpPolicy', env, verbose=1, device='cuda', tensorboard_log=log_dir)
-        case _:
-            print('Algorithm not found')
-            return
+    model = SAC('MlpPolicy', env, verbose=1, device='cuda', tensorboard_log=log_dir)
 
-    # Set the number of timesteps for each training iteration
-    TIMESTEPS = 30000 
-    iters = 0
-    
-    # Main training loop
+    total_timesteps = 0
+    start_time = time.time()
+    prev_success_count = 0
+
     while True:
-        iters += 1
+        model.learn(total_timesteps=10000, reset_num_timesteps=False, tb_log_name=run_name, callback=callbacks)
+        total_timesteps += 10000
         
-        # Train the model
-        model.learn(total_timesteps=TIMESTEPS, reset_num_timesteps=False, tb_log_name=run_name, callback=callbacks)
+        current_success_count = env.env.success_count  # Access the unwrapped environment
+        new_successes = current_success_count - prev_success_count
         
-        # Save the model
-        model.save(f"{model_dir}/{run_name}_{TIMESTEPS*iters}")
+        print(f"Total timesteps: {total_timesteps}, Total Successes: {current_success_count}, New Successes: {new_successes}")
+        
+        if new_successes > 0:
+            print(f"Goal reached! New success count: {new_successes}")
+        
+        prev_success_count = current_success_count
 
-        # Generate and save the unicycle and pendulum position plot
-        plot_unicycle_pendulum_position(unicycle_pendulum_logger, run_name, iters)
+        if current_success_count >= 10:
+            end_time = time.time()
+            training_time = end_time - start_time
+            print(f"\nTraining completed! 10 successes achieved.")
+            print(f"Total training time: {training_time:.2f} seconds")
+            print(f"Total timesteps: {total_timesteps}")
+            break
 
-        # Add termination condition if needed
+    model.save(f"{model_dir}/{run_name}_final")
 
-# Function to test the trained model
-def test(env, sb3_algo, path_to_model):
-    # Load the appropriate model based on the algorithm
-    match sb3_algo:
-        case 'SAC':
-            model = SAC.load(path_to_model, env=env)
-        case 'TD3':
-            model = TD3.load(path_to_model, env=env)
-        case 'A2C':
-            model = A2C.load(path_to_model, env=env)
-        case _:
-            print('Algorithm not found')
-            return
+    plot_unicycle_position(unicycle_logger, run_name, total_timesteps // 10000)
+
+def test(env, path_to_model):
+    model = SAC.load(path_to_model, env=env)
 
     obs, _ = env.reset()
     terminated = truncated = False
     total_reward = 0
     step_count = 0
+    success_count = 0
     
-    # Run the episode
     while not (terminated or truncated) and step_count < MAX_EPISODE_STEPS:
         action, _ = model.predict(obs)
         obs, reward, terminated, truncated, info = env.step(action)
@@ -207,12 +202,16 @@ def test(env, sb3_algo, path_to_model):
         print(f"Unicycle Roll, Pitch, Yaw: ({unicycle_euler[0]:.4f}, {unicycle_euler[1]:.4f}, {unicycle_euler[2]:.4f})")
         print(f"Pendulum Roll, Pitch, Yaw: ({pendulum_euler[0]:.4f}, {pendulum_euler[1]:.4f}, {pendulum_euler[2]:.4f})")
         print(f"Wheel Velocity: {wheel_velocity:.4f}")
+        print(f"Success Count: {info['success_count']}")
         print("------------------------------")
+
+        if info.get('goal_reached', False):
+            success_count += 1
     
-    # Print episode summary
     print(f"\nEpisode finished after {step_count} steps")
     print(f"Total reward: {total_reward}")
     print(f"Average reward per step: {total_reward / step_count}")
+    print(f"Total successes: {success_count}")
     
     if info.get('goal_reached', False):
         print("Episode ended by reaching the goal!")
@@ -222,23 +221,19 @@ def test(env, sb3_algo, path_to_model):
         print("Episode ended by truncation (max steps reached).")
 
 if __name__ == '__main__':
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Train or test model.')
-    parser.add_argument('sb3_algo', help='StableBaseline3 RL algorithm i.e. SAC, TD3')
-    parser.add_argument('-t', '--train', action='store_true')
-    parser.add_argument('-s', '--test', metavar='path_to_model')
+    parser = argparse.ArgumentParser(description='Train or test SAC model.')
+    parser.add_argument('-train', '--train', action='store_true')
+    parser.add_argument('-test', '--test', metavar='path_to_model')
     args = parser.parse_args()
 
-    # Create and wrap the environment
-    gymenv = RewardWrapper(gym.make('UnicyclePendulumTrajectory-v0', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS))
+    gymenv = NoSolutionWrapper(gym.make('UnicyclePendulumTrajectory-v0', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS))
 
     if args.train:
-        train(gymenv, args.sb3_algo)
+        train(gymenv)
 
     if args.test:
         if os.path.isfile(args.test):
-            # For testing, use render_mode='human'
-            test_env = RewardWrapper(gym.make('UnicyclePendulumTrajectory-v0', render_mode='human', max_episode_steps=MAX_EPISODE_STEPS))
-            test(test_env, args.sb3_algo, path_to_model=args.test)
+            test_env = NoSolutionWrapper(gym.make('UnicyclePendulumTrajectory-v0', render_mode='human', max_episode_steps=MAX_EPISODE_STEPS))
+            test(test_env, path_to_model=args.test)
         else:
             print(f'{args.test} not found.')
