@@ -187,6 +187,17 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
             self.coach_rewards.append(coach_reward)
             self.episodes.append(self.episode_count)
 
+            # Store the coach's reward in the buffer
+            # Since we want to store the coach's experience for the entire episode, 
+            # we use the cumulative coach reward calculated above.
+            self.coach_agent.model.replay_buffer.add(
+                combined_obs, combined_next_obs, coach_action, 
+                reward=coach_reward, done=done, info=info
+            )
+
+            # Update coach model dynamically
+            self.coach_agent.model.train()
+
             self.previous_episode_reward = self.current_episode_reward
             self.current_episode_reward = 0
             self.episode_student_rewards = []
