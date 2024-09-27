@@ -191,7 +191,7 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         )
         
         # Limit on number of steps
-        truncated = self.step_count >= self.max_steps
+        #truncated = self.step_count >= self.max_steps
 
         #done = terminated or truncated
 
@@ -200,7 +200,7 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         if self.render_mode == "human":
             self.render()
         
-        return observation, student_reward, terminated, truncated, info
+        return observation, student_reward, terminated, False, info
         
 
     def reset(self, seed=None, options=None):

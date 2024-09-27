@@ -18,85 +18,28 @@ import matplotlib.pyplot as plt
 import numpy as np
 import json
 import time
-import threading
-import time
 
-"""
 class PlottingCallback(BaseCallback):
-    def __init__(self, wrapped_env, ax1, ax2, fig, update_freq=1000, verbose=0):
+    def __init__(self, wrapped_env, ax1, ax2, fig, verbose=0):
         super(PlottingCallback, self).__init__(verbose)
         self.wrapped_env = wrapped_env
         self.ax1 = ax1
         self.ax2 = ax2
         self.fig = fig
-        self.update_freq = update_freq
+        self.last_episode_count = 0
 
         # Print to check the environment instance
         print(f"Environment in Callback: {id(self.wrapped_env)}", flush=True)
     
-    def _on_step(self) -> bool: 
-       return True
-    
-    def _on_rollout_end(self) -> None:
-        # Ensure rewards have been collected before trying to plot
-        if len(self.wrapped_env.student_rewards) > 0:
-            print(f"Student Rewards in Callback: {self.wrapped_env.student_rewards}")
-            print(f"Coach Rewards in Callback: {self.wrapped_env.coach_rewards}")
-            update_plot(self.wrapped_env, self.ax1, self.ax2, self.fig)
-        else:
-            print("No data to plot yet.")
-        plt.pause(0.01)
-"""        
-
-class PendulumCoachLogger(BaseCallback):
-    def __init__(self, best_model_path, verbose=0):
-        super(PendulumCoachLogger, self).__init__(verbose)
-        self.best_model_path = best_model_path
-        self.rewards = []
-        self.timesteps = []
-        self.iteration_rewards = []
-
     def _on_step(self) -> bool:
-        reward = self.locals['rewards'][0]
-        self.rewards.append(reward)
-        self.timesteps.append(self.num_timesteps)
-
-        # Save rewards and log every 3000 timesteps
-        if self.num_timesteps % 3000 == 0:
-            self.iteration_rewards.append(self.rewards[-3000:])
-            self.plot_graphs()
-        
+        # Check if a new episode is logged in the environment
+        if len(self.wrapped_env.episodes) > self.last_episode_count:
+            self.last_episode_count = len(self.wrapped_env.episodes)
+            # Update the plot with the latest data
+            update_plot(self.wrapped_env, self.ax1, self.ax2, self.fig)
         return True
-
-    def plot_graphs(self):
-        iteration = self.num_timesteps // 3000
-        fig, ax = plt.subplots(figsize=(10, 5))
-
-        # Plot the cumulative rewards
-        cumulative_rewards = np.cumsum(self.rewards)
-        ax.plot(self.timesteps, cumulative_rewards, label='Cumulative Reward')
-        ax.set_title('Cumulative Rewards over Time')
-        ax.set_xlabel('Timesteps')
-        ax.set_ylabel('Cumulative Reward')
-        ax.legend()
         
-        # Save the figure
-        save_path = os.path.join(self.best_model_path, f'pendulum_coach_analysis_iteration_{iteration}.png')
-        plt.savefig(save_path)
-        print(f"Plot saved to: {save_path}")
-        plt.close()
 
-    def plot_final_reward_graph(self):
-        plt.figure(figsize=(10, 5))
-        iteration_rewards = [np.sum(self.rewards[i:i+3000]) for i in range(0, len(self.rewards), 3000)]
-        plt.plot(range(1, len(iteration_rewards) + 1), iteration_rewards)
-        plt.title('Total Rewards per Iteration')
-        plt.xlabel('Iteration')
-        plt.ylabel('Total Reward')
-        save_path = os.path.join(self.best_model_path, 'final_reward_graph.png')
-        plt.savefig(save_path)
-        print(f"Final reward graph saved to: {save_path}")
-        plt.close()
 
 class CoachEnvWrapper(gym.Env):
     """
@@ -171,9 +114,18 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         super(InvertedPendulum3DEnvWithCoach, self).__init__(env)
         self.coach_agent = coach_agent
         self._render_mode = render_mode
-        self.student_rewards = []
-        self.coach_rewards = []
-        self.timesteps = []
+        # Move these outside of __init__ to ensure persistence between episodes
+        if not hasattr(self, 'student_rewards'):
+            self.student_rewards = []
+        if not hasattr(self, 'coach_rewards'):
+            self.coach_rewards = []
+        if not hasattr(self, 'episodes'):
+            self.episodes = []
+        
+        self.episode_student_rewards = []  # Store rewards for each episode
+        #self.episode_coach_rewards = []    # Store rewards for each episode
+        self.episode_coach_reward = 0
+        self.episode_count = 0
 
         self.current_episode_reward = 0  # Track the student's current episode reward
         self.previous_episode_reward = None  # Track the student's previous episode reward
@@ -183,14 +135,13 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         # Reset the wrapped environment (InvertedPendulum3DEnv)
         #print(f"Before reset - Student Rewards: {self.student_rewards}")
         obs, info = self.env.reset(**kwargs)
+        self.current_episode_reward = 0
+        self.episode_student_rewards =[]
         #print(f"After reset - Student Rewards: {self.student_rewards}")
         
-        # Reset the current episode reward
-        self.step_count = 0
-        self.current_episode_reward = 0
-        self.coach_total_rewards = 0
-        self.coach_rewards = []
+        #self.coach_rewards = []
         # Optional: Print statements to check
+
         print(f"Reset called. Student Rewards Length: {len(self.student_rewards)}")
         print(f"Reset called. Coach Rewards Length: {len(self.coach_rewards)}")
         return obs, info
@@ -216,60 +167,33 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
 
         # Update the student's current episode cumulative reward
         self.current_episode_reward += student_reward
-
-        improvement = 0
-        # Log coach reward
-        if self.previous_episode_reward is not None:
-            improvement = self.current_episode_reward - self.previous_episode_reward
-            coach_reward = improvement
-        else:
-            coach_reward = 0 # No reward for the first episode
-
-        print(f"Current Episode Reward: {self.current_episode_reward}")
-        print(f"Previous Episode Reward: {self.previous_episode_reward}")
-        print(f"Improvement: {improvement}")
-        print(f"Coach Reward: {coach_reward}")
-
+        self.episode_student_rewards.append(student_reward)
         
-        self.student_rewards.append(student_reward)
-        self.coach_rewards.append(coach_reward)
-        self.timesteps.append(self.env.unwrapped.step_count)
-        # Storing coach reward for this step
-        self.coach_total_rewards += coach_reward
+        # Log transition for both student and coach
+        combined_obs = np.concatenate([observation, action])
+        combined_next_obs = np.concatenate([next_observation, combined_action])
+        
+        # Add to coach's replay buffer
+        self.coach_agent.model.replay_buffer.add(
+            combined_obs, combined_next_obs, combined_action, 
+            reward=student_reward, done=done, info=info
+        )
 
-        # Print debug information
-        #print(f"Step: {self.env.unwrapped.step_count}, Student Reward: {student_reward}, Coach Reward: {coach_reward}")
-        # print(f"Step executed. Student Reward: {student_reward}, Coach Reward: {coach_reward}")
-        # print(f"Current Student Rewards: {self.student_rewards}")
-        #print(f"Current Coach Rewards: {self.coach_rewards}")
+        if terminated:
+            # Calculate the coach reward based on the episode performance
+            coach_reward = 0 if self.previous_episode_reward is None else self.current_episode_reward - self.previous_episode_reward
 
-        # Print debug information
-        #print(f"Step {self.env.unwrapped.step_count} - Student Reward: {student_reward}, Coach Reward: {coach_reward}")
-        #print(f"Total Student Rewards Collected: {len(self.student_rewards)}, Total Coach Rewards Collected: {len(self.coach_rewards)}")
-        print(f"Is it termined?????: {done}")
-        if done:
-            # Create combined observation for replay buffer (observation + action)
-            #combined_observation = np.concatenate([observation, action])
-            #combined_next_observation = np.concatenate([next_observation, action])
+            self.student_rewards.append(np.mean(self.episode_student_rewards))
+            self.coach_rewards.append(coach_reward)
+            self.episodes.append(self.episode_count)
 
-            """
-            # Log the coach reward and train the coach
-            self.coach_agent.model.replay_buffer.add(
-                combined_observation, # Comb observation
-                combined_next_observation, # Next observation
-                combined_action, # Combined action
-                np.array([coach_reward]), # Coach reward
-                np.array([done]), # Episode termination status
-                [info] # Additional info
-            )
-            """
-
-            # Update the previous episode reward
             self.previous_episode_reward = self.current_episode_reward
-            self.current_episode_reward = 0  # Reset for the next episode
-            #self.coach_total_rewards = 0
+            self.current_episode_reward = 0
+            self.episode_student_rewards = []
+            self.episode_coach_reward = 0
+            self.episode_count += 1
         
-        return next_observation, student_reward, terminated, truncated, info
+        return next_observation, student_reward, terminated, False, info
     
     def render(self):
         return self.env.render()
@@ -288,13 +212,10 @@ os.makedirs(log_dir, exist_ok=True)
 MAX_EPISODE_STEPS = 30000
 
 
-def train(env, sb3_algo, plot_update_interval=1000):
+def train(env, sb3_algo):
     print("Entered train function", flush=True)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     run_name = f"{sb3_algo}_{timestamp}"
-
-    best_model_path = f"{model_dir}/best_{run_name}"
-    os.makedirs(best_model_path, exist_ok=True)
 
     # Create a coach agent
     coach_agent = CoachAgent(env)
@@ -339,64 +260,91 @@ def train(env, sb3_algo, plot_update_interval=1000):
             return
 
     print("Model initialized", flush=True)
-    TIMESTEPS = 3000
-    total_timesteps = 0
-    max_timesteps = 3000 * 100
+    TIMESTEPS = 100000 
+    iters = 0
 
-    pendulum_coach_logger = PendulumCoachLogger(best_model_path)
-    callbacks = [eval_callback, pendulum_coach_logger]
+    plt.ion()
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+    plt.show(block=False)  # Non-blocking show
+    print("Matplotlib setup complete", flush=True)
 
+    plotting_callback = PlottingCallback(wrapped_env, ax1, ax2, fig)
 
-    while total_timesteps < max_timesteps:
+    #Combine both callbacks
+    combined_callbacks = [eval_callback, plotting_callback]
 
-        # Train the student model using a batch of timesteps
-        model.learn(total_timesteps=TIMESTEPS, reset_num_timesteps=False, tb_log_name=run_name, callback=callbacks)
+    while True:
+        try:
+            iters += 1
+            
+            # Print out some debug info to ensure data is being collected
+            print(f"Training iteration: {iters}", flush=True)
+            print(f"Starting model training for {TIMESTEPS} timesteps", flush=True)
 
+            # Train the student model
+            model.learn(total_timesteps=TIMESTEPS, reset_num_timesteps=False, tb_log_name=run_name, callback=combined_callbacks)
+            
+            # Print out some debug info post training
+            print(f"Model training complete for iteration: {iters}", flush=True)
 
-        # Save the model after each batch of timesteps
-        model.save(f"{model_dir}/{run_name}_{total_timesteps}")
+            # Train the coach
+            coach_agent.train(total_timesteps=TIMESTEPS)
+            
+            model.save(f"{model_dir}/{run_name}_{TIMESTEPS*iters}")
+            print(f"Model saved: {model_dir}/{run_name}_{TIMESTEPS*iters}", flush=True)
 
-        total_timesteps += TIMESTEPS
-        pendulum_coach_logger.plot_graphs()
-        # Train the coach agent after each batch
-        coach_agent.train(total_timesteps=total_timesteps)
+            # Print out some debug info to ensure data is being collected
+            print(f"Student Rewards Length: {len(wrapped_env.student_rewards)}", flush=True)
+            print(f"Coach Rewards Length: {len(wrapped_env.coach_rewards)}", flush=True)
+            print(f"Episode Length: {len(wrapped_env.episodes)}", flush=True)
 
-    print("Training completed after reaching 300000 timesteps.")
-    pendulum_coach_logger.plot_final_reward_graph()  # Final reward graph
-        
-
+        except Exception as e:
+            print(f"Error in training loop: {e}", flush=True)
+                                             
+    plt.ioff()
+    plt.show()
     
 
 def update_plot(wrapped_env, ax1, ax2, fig):
-# Clear previous data from the plots
+    # Ensure there is enough data to plot
+    if len(wrapped_env.student_rewards) < 1 or len(wrapped_env.episodes) < 1:
+        print("Not enough data to plot yet.")
+        print(f"Current Student Rewards Length: {len(wrapped_env.student_rewards)}")
+        print(f"Current Timesteps Length: {len(wrapped_env.episodes)}")
+        return  # Skip plotting if not enough data
+
+    print("Updating plot with data:", flush=True)
+    print(f"Student Rewards: {wrapped_env.student_rewards[-5:]}")  # Check last few entries
+    print(f"Coach Rewards: {wrapped_env.coach_rewards[-5:]}")      # Check last few entries
+    print(f"Timesteps: {wrapped_env.episodes[-5:]}")
+
+    # # Remove duplicates and sort data
+    # unique_timesteps, unique_indices = np.unique(wrapped_env.timesteps, return_index=True)
+    # unique_student_rewards = np.array(wrapped_env.student_rewards)[unique_indices]
+    # unique_coach_rewards = np.array(wrapped_env.coach_rewards)[unique_indices]
+
+    # Clear previous data
     ax1.clear()
     ax2.clear()
     
-    # Print debug info about data to be plotted
-    print("Updating plot with data:", flush=True)
-    print(f"Student Rewards: {wrapped_env.student_rewards}", flush=True)
-    print(f"Coach Rewards: {wrapped_env.coach_rewards}", flush=True)
-    print(f"Timesteps: {wrapped_env.timesteps}", flush=True)
-    
-    ax1.plot(wrapped_env.timesteps, wrapped_env.student_rewards, label='Student Reward')
-    ax1.set_xlabel('Timestep')
-    ax1.set_ylabel('Reward')
-    ax1.set_title('Student Reward over Time')
+    # Plot using episode mean data
+    ax1.plot(wrapped_env.episodes, wrapped_env.student_rewards, label='Student Reward Mean')
+    ax1.set_xlabel('Episode')
+    ax1.set_ylabel('Mean Reward')
+    ax1.set_title('Student Mean Reward over Episodes')
     ax1.legend()
 
-    # Plot Coach rewards
-    ax2.plot(wrapped_env.timesteps, wrapped_env.coach_rewards, label='Coach Reward', color='r')
-    ax2.set_xlabel('Timestep')
-    ax2.set_ylabel('Reward')
-    ax2.set_title('Coach Reward over Time')
+    ax2.plot(wrapped_env.episodes, wrapped_env.coach_rewards, label='Coach Reward Mean', color='r')
+    ax2.set_xlabel('Episode')
+    ax2.set_ylabel('Mean Reward')
+    ax2.set_title('Coach Mean Reward over Episodes')
     ax2.legend()
 
     # Redraw the plots
     # Force update of the canvas
     fig.canvas.draw()
     fig.canvas.flush_events()
-
-    plt.pause(0.5)  # Adjust pause time if necessary
+    plt.pause(0.1) 
 
 
 def test(env, sb3_algo, path_to_model):
@@ -450,7 +398,6 @@ if __name__ == '__main__':
     parser.add_argument('sb3_algo', help='StableBaseline3 RL algorithm i.e. SAC, TD3')
     parser.add_argument('-t', '--train', action='store_true')
     parser.add_argument('-s', '--test', metavar='path_to_model')
-    parser.add_argument('--plot_update_interval', type=int, default=1000, help='Interval to update the plot during training')
     args = parser.parse_args()
 
     #gymenv = gym.make('InvertedPendulum3DWithCoach-v1', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS)
@@ -476,7 +423,7 @@ if __name__ == '__main__':
         # Wrap the environment with the coach and logger
         gymenv = InvertedPendulum3DEnvWithCoach(base_env, coach_agent)
 
-        train(gymenv, args.sb3_algo, plot_update_interval=args.plot_update_interval)
+        train(gymenv, args.sb3_algo)
 
     if args.test:
         if os.path.isfile(args.test):

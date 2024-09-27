@@ -20,23 +20,22 @@ import json
 import time
 
 class PlottingCallback(BaseCallback):
-    def __init__(self, wrapped_env, ax1, ax2, fig, update_freq=1000, verbose=0):
+    def __init__(self, wrapped_env, ax1, ax2, fig, verbose=0):
         super(PlottingCallback, self).__init__(verbose)
         self.wrapped_env = wrapped_env
         self.ax1 = ax1
         self.ax2 = ax2
         self.fig = fig
-        self.update_freq = update_freq
-        self.plot_counter = 0
+        self.last_episode_count = 0
 
         # Print to check the environment instance
         print(f"Environment in Callback: {id(self.wrapped_env)}", flush=True)
     
     def _on_step(self) -> bool:
-        self.plot_counter += 1
-        # Update plot at the specified frequency
-        if self.plot_counter % self.update_freq == 0:
-            print(f"Updating plot at step {self.num_timesteps}")
+        # Check if a new episode is logged in the environment
+        if len(self.wrapped_env.episodes) > self.last_episode_count:
+            self.last_episode_count = len(self.wrapped_env.episodes)
+            # Update the plot with the latest data
             update_plot(self.wrapped_env, self.ax1, self.ax2, self.fig)
         return True
         
@@ -120,11 +119,12 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
             self.student_rewards = []
         if not hasattr(self, 'coach_rewards'):
             self.coach_rewards = []
-        if not hasattr(self, 'timesteps'):
-            self.timesteps = []
+        if not hasattr(self, 'episodes'):
+            self.episodes = []
         
         self.episode_student_rewards = []  # Store rewards for each episode
-        self.episode_coach_rewards = []    # Store rewards for each episode
+        #self.episode_coach_rewards = []    # Store rewards for each episode
+        self.episode_coach_reward = 0
         self.episode_count = 0
 
         self.current_episode_reward = 0  # Track the student's current episode reward
@@ -137,26 +137,8 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         obs, info = self.env.reset(**kwargs)
         #print(f"After reset - Student Rewards: {self.student_rewards}")
         
-        # Reset the current episode reward
-        self.current_episode_reward = 0
-        self.step_count = 0
-        
-        self.coach_total_rewards = 0
         #self.coach_rewards = []
         # Optional: Print statements to check
-
-        # Log mean rewards per episode
-        if len(self.episode_student_rewards) > 0:
-            mean_student_reward = np.mean(self.episode_student_rewards)
-            mean_coach_reward = np.mean(self.episode_coach_rewards)
-            self.student_rewards.append(mean_student_reward)
-            self.coach_rewards.append(mean_coach_reward)
-            self.timesteps.append(self.episode_count)
-
-            # Reset episode accumulators
-            self.episode_student_rewards = []
-            self.episode_coach_rewards = []
-            self.episode_count += 1
 
         print(f"Reset called. Student Rewards Length: {len(self.student_rewards)}")
         print(f"Reset called. Coach Rewards Length: {len(self.coach_rewards)}")
@@ -183,21 +165,16 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
 
         # Update the student's current episode cumulative reward
         self.current_episode_reward += student_reward
+        self.episode_student_rewards.append(student_reward)
 
-        improvement = 0
-        # Log coach reward
-        if self.previous_episode_reward is not None:
-            improvement = self.current_episode_reward - self.previous_episode_reward
-            coach_reward = improvement
-        else:
-            coach_reward = 0 # No reward for the first episode
+
 
         
-        self.student_rewards.append(student_reward)
-        self.coach_rewards.append(coach_reward)
-        self.timesteps.append(self.env.unwrapped.step_count)
-        # Storing coach reward for this step
-        self.coach_total_rewards += coach_reward
+        # self.student_rewards.append(student_reward)
+        # self.coach_rewards.append(coach_reward)
+        # self.timesteps.append(self.env.unwrapped.step_count)
+        # # Storing coach reward for this step
+        # self.coach_total_rewards += coach_reward
 
         # Print debug information
         #print(f"Step: {self.env.unwrapped.step_count}, Student Reward: {student_reward}, Coach Reward: {coach_reward}")
@@ -208,27 +185,21 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         # Print debug information
         #print(f"Step {self.env.unwrapped.step_count} - Student Reward: {student_reward}, Coach Reward: {coach_reward}")
         #print(f"Total Student Rewards Collected: {len(self.student_rewards)}, Total Coach Rewards Collected: {len(self.coach_rewards)}")
+        
+
         if terminated:
-            # Create combined observation for replay buffer (observation + action)
-            #combined_observation = np.concatenate([observation, action])
-            #combined_next_observation = np.concatenate([next_observation, action])
+            # Calculate the coach reward based on the episode performance
+            coach_reward = 0 if self.previous_episode_reward is None else self.current_episode_reward - self.previous_episode_reward
 
-            """
-            # Log the coach reward and train the coach
-            self.coach_agent.model.replay_buffer.add(
-                combined_observation, # Comb observation
-                combined_next_observation, # Next observation
-                combined_action, # Combined action
-                np.array([coach_reward]), # Coach reward
-                np.array([done]), # Episode termination status
-                [info] # Additional info
-            )
-            """
+            self.student_rewards.append(np.mean(self.episode_student_rewards))
+            self.coach_rewards.append(coach_reward)
+            self.episodes.append(self.episode_count)
 
-            # Update the previous episode reward
             self.previous_episode_reward = self.current_episode_reward
-            self.current_episode_reward = 0  # Reset for the next episode
-            #self.coach_total_rewards = 0
+            self.current_episode_reward = 0
+            self.episode_student_rewards = []
+            self.episode_coach_reward = 0
+            self.episode_count += 1
         
         return next_observation, student_reward, terminated, False, info
     
@@ -249,7 +220,7 @@ os.makedirs(log_dir, exist_ok=True)
 MAX_EPISODE_STEPS = 30000
 
 
-def train(env, sb3_algo, plot_update_interval=1000):
+def train(env, sb3_algo):
     print("Entered train function", flush=True)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     run_name = f"{sb3_algo}_{timestamp}"
@@ -297,7 +268,7 @@ def train(env, sb3_algo, plot_update_interval=1000):
             return
 
     print("Model initialized", flush=True)
-    TIMESTEPS = 10000 
+    TIMESTEPS = 100000 
     iters = 0
 
     plt.ion()
@@ -305,7 +276,7 @@ def train(env, sb3_algo, plot_update_interval=1000):
     plt.show(block=False)  # Non-blocking show
     print("Matplotlib setup complete", flush=True)
 
-    plotting_callback = PlottingCallback(wrapped_env, ax1, ax2, fig, update_freq=50)
+    plotting_callback = PlottingCallback(wrapped_env, ax1, ax2, fig)
 
     #Combine both callbacks
     combined_callbacks = [eval_callback, plotting_callback]
@@ -333,13 +304,8 @@ def train(env, sb3_algo, plot_update_interval=1000):
             # Print out some debug info to ensure data is being collected
             print(f"Student Rewards Length: {len(wrapped_env.student_rewards)}", flush=True)
             print(f"Coach Rewards Length: {len(wrapped_env.coach_rewards)}", flush=True)
-            print(f"Timesteps Length: {len(wrapped_env.timesteps)}", flush=True)
+            print(f"Episode Length: {len(wrapped_env.episodes)}", flush=True)
 
-            update_plot(wrapped_env, ax1, ax2, fig)
-
-            # Pause to give time for the plot to update
-            plt.pause(0.1)
-            time.sleep(0.1)  # Add a small delay to allow for plot and print updates
         except Exception as e:
             print(f"Error in training loop: {e}", flush=True)
                                              
@@ -349,16 +315,16 @@ def train(env, sb3_algo, plot_update_interval=1000):
 
 def update_plot(wrapped_env, ax1, ax2, fig):
     # Ensure there is enough data to plot
-    if len(wrapped_env.student_rewards) < 1 or len(wrapped_env.timesteps) < 1:
+    if len(wrapped_env.student_rewards) < 1 or len(wrapped_env.episodes) < 1:
         print("Not enough data to plot yet.")
         print(f"Current Student Rewards Length: {len(wrapped_env.student_rewards)}")
-        print(f"Current Timesteps Length: {len(wrapped_env.timesteps)}")
+        print(f"Current Timesteps Length: {len(wrapped_env.episodes)}")
         return  # Skip plotting if not enough data
 
     print("Updating plot with data:", flush=True)
     print(f"Student Rewards: {wrapped_env.student_rewards[-5:]}")  # Check last few entries
     print(f"Coach Rewards: {wrapped_env.coach_rewards[-5:]}")      # Check last few entries
-    print(f"Timesteps: {wrapped_env.timesteps[-5:]}")
+    print(f"Timesteps: {wrapped_env.episodes[-5:]}")
 
     # # Remove duplicates and sort data
     # unique_timesteps, unique_indices = np.unique(wrapped_env.timesteps, return_index=True)
@@ -370,13 +336,13 @@ def update_plot(wrapped_env, ax1, ax2, fig):
     ax2.clear()
     
     # Plot using episode mean data
-    ax1.plot(wrapped_env.timesteps, wrapped_env.student_rewards, label='Student Reward Mean')
+    ax1.plot(wrapped_env.episodes, wrapped_env.student_rewards, label='Student Reward Mean')
     ax1.set_xlabel('Episode')
     ax1.set_ylabel('Mean Reward')
     ax1.set_title('Student Mean Reward over Episodes')
     ax1.legend()
 
-    ax2.plot(wrapped_env.timesteps, wrapped_env.coach_rewards, label='Coach Reward Mean', color='r')
+    ax2.plot(wrapped_env.episodes, wrapped_env.coach_rewards, label='Coach Reward Mean', color='r')
     ax2.set_xlabel('Episode')
     ax2.set_ylabel('Mean Reward')
     ax2.set_title('Coach Mean Reward over Episodes')
