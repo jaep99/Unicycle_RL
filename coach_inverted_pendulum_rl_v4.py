@@ -128,7 +128,7 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         self.episode_count = 0
 
         self.current_episode_reward = 0  # Track the student's current episode reward
-        self.previous_episode_reward = None  # Track the student's previous episode reward
+        self.previous_episode_reward = 0  # Track the student's previous episode reward
         self.coach_total_rewards = 0
 
     def reset(self, **kwargs):
@@ -164,6 +164,7 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         combined_action = action + coach_action
         next_observation, student_reward, terminated, truncated, info = self.env.step(combined_action)
         done = terminated or truncated
+        assert isinstance(info, dict), f"Expected info to be a dictionary, but got {type(info)}"
 
         # Update the student's current episode cumulative reward
         self.current_episode_reward += student_reward
@@ -173,30 +174,77 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         combined_obs = np.concatenate([observation, action])
         combined_next_obs = np.concatenate([next_observation, combined_action])
         
+        """
         # Add to coach's replay buffer
         self.coach_agent.model.replay_buffer.add(
             combined_obs, combined_next_obs, combined_action, 
             reward=student_reward, done=done, info=info
         )
+        """
+        # print(f"combined_obs type: {type(combined_obs)}")
+        # print(f"combined_next_obs type: {type(combined_next_obs)}")
+        # print(f"coach_action type: {type(coach_action)}")
+        # print(f"reward type: {type(coach_reward)}")
+        # print(f"done type: {type(done)}")
+        # print(f"infos type: {type(infos)}")
 
         if terminated:
-            # Calculate the coach reward based on the episode performance
-            coach_reward = 0 if self.previous_episode_reward is None else self.current_episode_reward - self.previous_episode_reward
+            # Ensure coach_reward is initialized no matter the condition
+            if self.previous_episode_reward != 0:
+                coach_reward = self.current_episode_reward - self.previous_episode_reward
+            else:
+                coach_reward = self.current_episode_reward  # Handle initial episode case
+        
+            # Debugging statement to ensure coach_reward is correctly assigned
+            print(f"Coach reward calculated: {coach_reward}")
 
+            student_rewards = self.get_wrapper_attr('student_rewards')
             self.student_rewards.append(np.mean(self.episode_student_rewards))
+            coach_rewards = self.get_wrapper_attr('coach_rewards')
             self.coach_rewards.append(coach_reward)
+            episodes = self.get_wrapper_attr('episodes')
             self.episodes.append(self.episode_count)
+
+            # numpy array with shape (1,)
+            done = np.array([done], dtype=np.bool_)
+
+            # Validate infos is a dictionary
+            infos = {    
+                'episode_reward': coach_reward,
+                'default_key': 1  # Simple values, no nesting
+            }
+
 
             # Store the coach's reward in the buffer
             # Since we want to store the coach's experience for the entire episode, 
             # we use the cumulative coach reward calculated above.
-            self.coach_agent.model.replay_buffer.add(
-                combined_obs, combined_next_obs, coach_action, 
-                reward=coach_reward, done=done, info=info
-            )
+            if combined_obs.size ==  0:
+                print(f"Error: combined obs size error")
+            elif combined_next_obs.size == 0:
+                print(f"Error: combined next obs size error")
+            elif coach_action.size == 0:
+                print(f"Error: coach_action size error")
+            elif done.size == 0:
+                print(f"Error: done size error")
+            try:
+                # Ensuring all values in `infos` are JSON serializable
+                if isinstance(infos, dict):
+                    for key, value in infos.items():
+                        if isinstance(value, (dict, list, str, int, float, bool)) == False:
+                            raise ValueError(f"Invalid type for infos key '{key}': {type(value)}")
+                        
+                print(f"Type of infos before adding to replay buffer: {type(infos)}")
+                print(f"Contents of infos: {infos}")
+                assert isinstance(infos, dict), f"Expected infos to be a dict, got {type(infos)}"
+                self.coach_agent.model.replay_buffer.add(
+                    combined_obs, combined_next_obs, coach_action, 
+                    reward=coach_reward, done=done, infos=infos
+                )
+            except Exception as e:
+                print(f"Error in adding to replay buffer: {e}")
 
             # Update coach model dynamically
-            self.coach_agent.model.train()
+            self.coach_agent.model.learn(total_timesteps=5000)
 
             self.previous_episode_reward = self.current_episode_reward
             self.current_episode_reward = 0
@@ -305,9 +353,9 @@ def train(env, sb3_algo):
             print(f"Model saved: {model_dir}/{run_name}_{TIMESTEPS*iters}", flush=True)
 
             # Print out some debug info to ensure data is being collected
-            print(f"Student Rewards Length: {len(wrapped_env.student_rewards)}", flush=True)
-            print(f"Coach Rewards Length: {len(wrapped_env.coach_rewards)}", flush=True)
-            print(f"Episode Length: {len(wrapped_env.episodes)}", flush=True)
+            # print(f"Student Rewards Length: {len(wrapped_env.student_rewards)}", flush=True)
+            # print(f"Coach Rewards Length: {len(wrapped_env.coach_rewards)}", flush=True)
+            # print(f"Episode Length: {len(wrapped_env.episodes)}", flush=True)
 
         except Exception as e:
             print(f"Error in training loop: {e}", flush=True)
