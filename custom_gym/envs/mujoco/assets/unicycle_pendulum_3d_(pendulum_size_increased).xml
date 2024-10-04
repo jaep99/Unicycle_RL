@@ -1,0 +1,43 @@
+<mujoco model="Unicycle with Inverted Pendulum">
+    <asset>
+        <mesh name="wheel" file="UNI_WHEEL.stl" scale="0.01 0.01 0.01"/>
+        <mesh name="frame" file="UNI_FRAME.stl" scale="0.01 0.01 0.01"/>
+        <texture name="checkerboard" type="2d" builtin="checker" rgb1=".2 .3 .4" rgb2=".3 .4 .5" width="512" height="512"/>
+        <material name="checkerboard" texture="checkerboard" texrepeat="5 5" texuniform="true"/>
+    </asset>
+
+    <compiler inertiafromgeom="true"/>
+    <option gravity="0 0 -9.81" integrator="RK4" timestep="0.005"/>
+
+    <worldbody>
+        <geom name="floor" pos="0 0 0" size="12 12 0.01" type="plane" material="checkerboard"/>
+        <geom name="floor_goal_right" pos="13.5 0 0" size="1.5 15 0.01" type="plane" rgba="1 0 0 1"/>
+        <geom name="floor_goal_left" pos="-13.5 0 0" size="1.5 15 0.01" type="plane" rgba="1 0 0 1"/>
+        <geom name="floor_goal_top" pos="0 13.5 0" size="1.5 15 0.01" type="plane" euler="0 0 90" rgba="1 0 0 1"/>
+        <geom name="floor_goal_bottom" pos="0 -13.5 0" size="1.5 15 0.01" type="plane" euler="0 0 90" rgba="1 0 0 1"/>
+
+        <light pos="0 0 100" dir="0 0 -1" castshadow="false"/>
+        <body name="unicycle" pos="0 0 0.266">
+            <joint name="free_joint" type="free"/>
+            <body name="frame">
+                <geom type="mesh" mesh="frame" pos="0 0 0.26" euler="0 90 90" rgba="0.5 0.5 0.5 1"/>
+                <body name="pendulum" pos="0 0 0.47">
+                    <joint name="pendulum_joint" type="ball" damping="0.1"/>
+                    <geom name="rod" type="capsule" fromto="0 0 0 0 0 0.5" size="0.015" rgba="0.7 0.7 0.7 1"/>
+                    <geom name="mass" type="sphere" pos="0 0 0.5" size="0.05" rgba=".8 .2 .2 1"/>
+                </body>
+            </body>
+            <body name="wheel" pos="0 0 0">
+                <joint name="wheel_joint" type="hinge" axis="0 1 0"/>
+                <geom type="mesh" mesh="wheel" pos="0 0 0" euler="0 0 90" rgba="0.8 0.8 0.8 0.6"/>
+                <geom name="wheel_marker" type="capsule" size="0.01 0.24" pos="0 0 0" euler="0 0 90" rgba="0.5 0.5 0.5 1"/>
+            </body>
+        </body>
+    </worldbody>
+
+    <actuator>
+        <motor name="wheel_motor" joint="wheel_joint" gear="20" ctrllimited="true" ctrlrange="-1 1"/>
+        <motor name="roll_stabilizer" joint="free_joint" gear="0 0 0 10 0 0" ctrllimited="true" ctrlrange="-1 1"/>
+        <motor name="yaw_control" joint="free_joint" gear="0 0 0 0 0 5" ctrllimited="true" ctrlrange="-1 1"/>
+    </actuator>
+</mujoco>
