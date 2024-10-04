@@ -3,7 +3,7 @@ from gymnasium import spaces
 from gymnasium.spaces import Dict, Box
 from gymnasium import Env
 from gymnasium.wrappers import EnvCompatibility
-from stable_baselines3 import SAC, TD3, A2C
+from stable_baselines3 import SAC, TD3, A2C, PPO
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.monitor import Monitor
 import os
@@ -32,13 +32,14 @@ class PlottingCallback(BaseCallback):
         print(f"Environment in Callback: {id(self.wrapped_env)}", flush=True)
     
     def _on_step(self) -> bool:
+        print(f"Current episodes list: {self.wrapped_env.episodes}", flush=True)  # Add this to debug
         # Check if a new episode is logged in the environment
         if len(self.wrapped_env.episodes) > self.last_episode_count:
+            print("Calling update_plot...", flush=True)  # Add this for debugging
             self.last_episode_count = len(self.wrapped_env.episodes)
             # Update the plot with the latest data
             update_plot(self.wrapped_env, self.ax1, self.ax2, self.fig)
         return True
-        
 
 
 class CoachEnvWrapper(gym.Env):
@@ -81,7 +82,7 @@ class CoachAgent:
         self.coach_env = CoachEnvWrapper(env, self.action_space)
 
         # Initialize SAC with the wrapped environment
-        self.model = SAC("MlpPolicy", self.coach_env, verbose=1, device="cpu")
+        self.model = PPO("MlpPolicy", self.coach_env, verbose=1, device="cpu")
         
         # Initialize SAC with the environment instead of spaces
         #self.model = SAC('MlpPolicy', env, verbose=1, device='cpu')
@@ -124,36 +125,26 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
             self.episodes = []
         
         self.episode_student_rewards = []  # Store rewards for each episode
-        #self.episode_coach_rewards = []    # Store rewards for each episode
-        self.episode_coach_reward = 0
+        self.episode_coach_rewards = []    # Store rewards for each episode
+        #self.episode_coach_reward = 0
         self.episode_count = 0
 
-        self.current_episode_reward = 0  # Track the student's current episode reward
-        self.previous_episode_reward = 0  # Track the student's previous episode reward
-        self.coach_total_rewards = 0
+        #self.current_episode_reward = 0  # Track the student's current episode reward
+        #self.previous_episode_reward = 0  # Track the student's previous episode reward
+        #self.coach_total_rewards = 0
 
     def reset(self, **kwargs):
-        # Reset the wrapped environment (InvertedPendulum3DEnv)
-        #print(f"Before reset - Student Rewards: {self.student_rewards}")
-        obs, info = self.env.reset(**kwargs)
-        self.current_episode_reward = 0
-        self.episode_student_rewards =[]
-        #print(f"After reset - Student Rewards: {self.student_rewards}")
+        print(f"Before reset - Student Rewards Length: {len(self.student_rewards)}")
+        print(f"Before reset - Coach Rewards Length: {len(self.coach_rewards)}")
         
-        #self.coach_rewards = []
-        # Optional: Print statements to check
-
-        print(f"Reset called. Student Rewards Length: {len(self.student_rewards)}")
-        print(f"Reset called. Coach Rewards Length: {len(self.coach_rewards)}")
+        obs, info = self.env.reset(**kwargs)
+        
+        print(f"After reset - Student Rewards Length: {len(self.student_rewards)}")
+        print(f"After reset - Coach Rewards Length: {len(self.coach_rewards)}")
         return obs, info
 
+
     def step(self, action):
-        """
-        state = self.env.state
-        coach_action = self.coach_agent.select_action(action, state)
-        combined_action = action + coach_action  # Combine student and coach actions
-        return self.env.step(combined_action)
-        """
         # Use env.unwrapped to access the base environment
         observation = self.env.unwrapped._get_obs()
         
@@ -166,74 +157,51 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         print(f"Terminated: {terminated}, Truncated: {truncated}")
         done = terminated or truncated
 
+        # Calculate immediate reward feedback for the coach
+        if len(self.episode_student_rewards) > 0:
+            previous_student_reward = self.episode_student_rewards[-1]
+            coach_reward = student_reward - previous_student_reward  # reward based on improvement
+        else:
+            coach_reward = student_reward  # first step uses student reward as base
+
         # Update the student's current episode cumulative reward
-        self.current_episode_reward += student_reward
+        #self.current_episode_reward += student_reward
         self.episode_student_rewards.append(student_reward)
+        self.episode_coach_rewards.append(coach_reward)
+
+        self.coach_agent.model.learn(total_timesteps=1)
+
+        # Debugging statement to ensure coach_reward is correctly assigned
+        print(f"Coach reward calculated: {coach_reward}")
         
         # Log transition for both student and coach
         combined_obs = np.concatenate([observation, action])
         combined_next_obs = np.concatenate([next_observation, combined_action])
-        
-        
-        # Add to coach's replay buffer
-        self.coach_agent.model.replay_buffer.add(
-            combined_obs, combined_next_obs, combined_action, 
-            student_reward, terminated, info or {"angle": 0.0}
-        )
-        
-        # print(f"combined_obs type: {type(combined_obs)}")
-        # print(f"combined_next_obs type: {type(combined_next_obs)}")
-        # print(f"coach_action type: {type(coach_action)}")
-        # print(f"reward type: {type(coach_reward)}")
-        # print(f"done type: {type(done)}")
-        # print(f"infos type: {type(infos)}")
 
         if terminated:
-            # Ensure coach_reward is initialized no matter the condition
-            if self.previous_episode_reward != 0:
-                coach_reward = self.current_episode_reward - self.previous_episode_reward
-            else:
-                coach_reward = self.current_episode_reward  # Handle initial episode case
-        
-            # Debugging statement to ensure coach_reward is correctly assigned
-            print(f"Coach reward calculated: {coach_reward}")
+            # # Ensure coach_reward is initialized no matter the condition
+            # if self.previous_episode_reward != 0:
+            #     coach_reward = self.current_episode_reward - self.previous_episode_reward
+            # else:
+            #     coach_reward = self.current_episode_reward  # Handle initial episode case
 
-            self.student_rewards.append(np.mean(self.episode_student_rewards))
-            self.coach_rewards.append(coach_reward)
-            self.episodes.append(self.episode_count)
-
-            # numpy array with shape (1,)
-            done = np.array([done], dtype=np.bool_)
-
-            # infos = {'angle': 1}
-
-            # try:
-            #     # Before adding to replay buffer
-            #     print(f"Step 2 - Type of infos before adding to replay buffer: {type(infos)}, Content: {infos}")
-            #     self.coach_agent.model.replay_buffer.add(
-            #         combined_obs, combined_next_obs, coach_action,
-            #         reward=coach_reward, done=done, infos=infos
-            #     )
-            # except Exception as e:
-            #     print(f"Error in adding to replay buffer: {e}")
-
-            # Update coach model dynamically
-            self.coach_agent.model.learn(total_timesteps=5000)
-
-            self.previous_episode_reward = self.current_episode_reward
-            self.current_episode_reward = 0
-            self.episode_student_rewards = []
-            self.episode_coach_reward = 0
             self.episode_count += 1
-        
+            self.student_rewards.append(np.mean(self.episode_student_rewards))
+            self.coach_rewards.append(np.mean(self.episode_coach_rewards))
+            self.episodes.append(self.episode_count)
+            print(f"Episode Count: {self.episode_count}", flush=True)  # Debugging statement
+
+            #self.previous_episode_reward = self.current_episode_reward
+            #self.current_episode_reward = 0
+            self.episode_student_rewards = []
+            self.episode_coach_rewards = []
+            #self.episode_coach_reward = 0
+
         return next_observation, student_reward, terminated, False, info
     
     def render(self):
         return self.env.render()
-        """
-        if self._render_mode:
-            return self.env.render(mode=self._render_mode)
-        """
+
 
 # Create directories to hold models and logs
 model_dir = "models"
@@ -282,6 +250,8 @@ def train(env, sb3_algo):
     print("EvalCallback added", flush=True)
 
     match sb3_algo:
+        case 'PPO':
+            model = PPO('MlpPolicy', env, verbose=1, device='cpu', tensorboard_log=log_dir)
         case 'SAC':
             model = SAC('MlpPolicy', env, verbose=1, device='cpu', tensorboard_log=log_dir)
         case 'TD3':
@@ -319,9 +289,6 @@ def train(env, sb3_algo):
             
             # Print out some debug info post training
             print(f"Model training complete for iteration: {iters}", flush=True)
-
-            # Train the coach
-            coach_agent.train(total_timesteps=TIMESTEPS)
             
             model.save(f"{model_dir}/{run_name}_{TIMESTEPS*iters}")
             print(f"Model saved: {model_dir}/{run_name}_{TIMESTEPS*iters}", flush=True)
@@ -339,45 +306,90 @@ def train(env, sb3_algo):
     
 
 def update_plot(wrapped_env, ax1, ax2, fig):
-    # Ensure there is enough data to plot
-    if len(wrapped_env.student_rewards) < 1 or len(wrapped_env.episodes) < 1:
-        print("Not enough data to plot yet.")
-        print(f"Current Student Rewards Length: {len(wrapped_env.student_rewards)}")
-        print(f"Current Timesteps Length: {len(wrapped_env.episodes)}")
-        return  # Skip plotting if not enough data
+    # # Ensure there is enough data to plot
+    # if len(wrapped_env.student_rewards) < 1 or len(wrapped_env.episodes) < 1:
+    #     print("Not enough data to plot yet.")
+    #     print(f"Current Student Rewards Length: {len(wrapped_env.student_rewards)}")
+    #     print(f"Current Episode Length: {len(wrapped_env.episodes)}")
+    #     return  # Skip plotting if not enough data
 
-    print("Updating plot with data:", flush=True)
-    print(f"Student Rewards: {wrapped_env.student_rewards[-5:]}")  # Check last few entries
-    print(f"Coach Rewards: {wrapped_env.coach_rewards[-5:]}")      # Check last few entries
-    print(f"Timesteps: {wrapped_env.episodes[-5:]}")
+    # print("Updating plot with data:", flush=True)
+    # print(f"Student Rewards: {wrapped_env.student_rewards[-5:]}")  # Check last few entries
+    # print(f"Coach Rewards: {wrapped_env.coach_rewards[-5:]}")      # Check last few entries
+    # print(f"Episodes: {wrapped_env.episodes[-5:]}")
 
-    # # Remove duplicates and sort data
-    # unique_timesteps, unique_indices = np.unique(wrapped_env.timesteps, return_index=True)
-    # unique_student_rewards = np.array(wrapped_env.student_rewards)[unique_indices]
-    # unique_coach_rewards = np.array(wrapped_env.coach_rewards)[unique_indices]
+    # # # Remove duplicates and sort data
+    # # unique_timesteps, unique_indices = np.unique(wrapped_env.timesteps, return_index=True)
+    # # unique_student_rewards = np.array(wrapped_env.student_rewards)[unique_indices]
+    # # unique_coach_rewards = np.array(wrapped_env.coach_rewards)[unique_indices]
 
-    # Clear previous data
-    ax1.clear()
-    ax2.clear()
-    
-    # Plot using episode mean data
-    ax1.plot(wrapped_env.episodes, wrapped_env.student_rewards, label='Student Reward Mean')
-    ax1.set_xlabel('Episode')
-    ax1.set_ylabel('Mean Reward')
-    ax1.set_title('Student Mean Reward over Episodes')
-    ax1.legend()
+    # # Clear previous data
+    # ax1.clear()
+    # ax2.clear()
 
-    ax2.plot(wrapped_env.episodes, wrapped_env.coach_rewards, label='Coach Reward Mean', color='r')
-    ax2.set_xlabel('Episode')
-    ax2.set_ylabel('Mean Reward')
-    ax2.set_title('Coach Mean Reward over Episodes')
-    ax2.legend()
+    # # Plot using episode mean data
+    # ax1.plot(wrapped_env.episodes, wrapped_env.student_rewards, label='Student Reward Mean')
+    # ax1.set_xlabel('Episode')
+    # ax1.set_ylabel('Mean Reward')
+    # ax1.set_title('Student Mean Reward over Episodes')
+    # ax1.legend()
 
-    # Redraw the plots
-    # Force update of the canvas
+    # ax2.plot(wrapped_env.episodes, wrapped_env.coach_rewards, label='Coach Reward Mean', color='r')
+    # ax2.set_xlabel('Episode')
+    # ax2.set_ylabel('Mean Reward')
+    # ax2.set_title('Coach Mean Reward over Episodes')
+    # ax2.legend()
+
+    # # Redraw the plots
+    # # Force update of the canvas
+    # fig.canvas.draw()
+    # fig.canvas.flush_events()
+    # plt.pause(0.1) 
+
+    print("Updating plot...", flush=True)
+
+    # Simplify the check to ensure it's always called
+    ax1.plot(wrapped_env.episodes, wrapped_env.student_rewards, 'bo-', label='Student Reward Mean')
+    ax2.plot(wrapped_env.episodes, wrapped_env.coach_rewards, 'ro-', label='Coach Reward Mean')
+
     fig.canvas.draw()
     fig.canvas.flush_events()
-    plt.pause(0.1) 
+    plt.pause(0.1)
+
+
+# def update_plot(wrapped_env, ax1, ax2, fig):
+#     # Ensure there is enough data to plot
+#     if len(wrapped_env.student_rewards) < 1 or len(wrapped_env.episodes) < 1:
+#         print("Not enough data to plot yet.")
+#         print(f"Current Student Rewards Length: {len(wrapped_env.student_rewards)}")
+#         print(f"Current Episode Length: {len(wrapped_env.episodes)}")
+#         return  # Skip plotting if not enough data
+
+#     print("Updating plot with new data:", flush=True)
+    
+#     # Extract the latest data point
+#     latest_student_reward = wrapped_env.student_rewards[-1]
+#     latest_coach_reward = wrapped_env.coach_rewards[-1]
+#     latest_episode = wrapped_env.episodes[-1]
+
+#     print(f"New Student Reward: {latest_student_reward}")
+#     print(f"New Coach Reward: {latest_coach_reward}")
+#     print(f"Episode: {latest_episode}")
+
+#     # Plot the new data point without clearing the previous plot
+#     ax1.plot(latest_episode, latest_student_reward, 'bo', label='Student Reward Mean' if latest_episode == 1 else "")  # Blue dots
+#     ax2.plot(latest_episode, latest_coach_reward, 'ro', label='Coach Reward Mean' if latest_episode == 1 else "")  # Red dots
+
+#     # Redraw the legend for the first plot if labels were added
+#     if latest_episode == 1:
+#         ax1.legend()
+#         ax2.legend()
+
+#     # Force update of the canvas with the new data points
+#     fig.canvas.draw()
+#     fig.canvas.flush_events()
+#     plt.pause(0.1)  # This ensures the plot is updated
+
 
 
 def test(env, sb3_algo, path_to_model):
@@ -387,6 +399,8 @@ def test(env, sb3_algo, path_to_model):
     gymenv = InvertedPendulum3DEnvWithCoach(env, coach_agent, logger=None)
 
     match sb3_algo:
+        case 'PPO':
+            model = PPO.load(path_to_model, env =gymenv)
         case 'SAC':
             model = SAC.load(path_to_model, env=gymenv)
         case 'TD3':

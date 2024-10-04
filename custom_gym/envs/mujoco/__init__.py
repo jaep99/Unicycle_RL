@@ -22,6 +22,12 @@ register(
 )
 
 register(
+    id='InvertedPendulum3D-v4',
+    entry_point='custom_gym.envs.mujoco.coach_inverted_pendulum_3d_v4:InvertedPendulum3DEnv',
+    max_episode_steps=30000,
+)
+
+register(
     id='InvertedPendulum3DWithCoach-v0',
     entry_point='custom_gym.envs.mujoco.coach_inverted_pendulum_3d_v0:InvertedPendulum3DEnvWithCoach',
     kwargs={'render_mode': None}, 
