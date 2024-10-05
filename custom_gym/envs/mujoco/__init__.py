@@ -28,6 +28,11 @@ register(
 )
 
 register(
+    id='InvertedPendulum3D-v5',
+    entry_point='custom_gym.envs.mujoco.coach_inverted_pendulum_3d_v5:InvertedPendulum3DEnv',
+)
+
+register(
     id='InvertedPendulum3DWithCoach-v0',
     entry_point='custom_gym.envs.mujoco.coach_inverted_pendulum_3d_v0:InvertedPendulum3DEnvWithCoach',
     kwargs={'render_mode': None}, 

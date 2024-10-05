@@ -146,7 +146,8 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
 
     def step(self, action):
         # Use env.unwrapped to access the base environment
-        observation = self.env.unwrapped._get_obs()
+        #observation = self.env.unwrapped._get_obs()
+        observation = self.env._get_obs()
         
         # Get the coach action
         coach_action = self.coach_agent.select_action(observation, action)
@@ -175,10 +176,10 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
         print(f"Coach reward calculated: {coach_reward}")
         
         # Log transition for both student and coach
-        combined_obs = np.concatenate([observation, action])
-        combined_next_obs = np.concatenate([next_observation, combined_action])
+        #combined_obs = np.concatenate([observation, action])
+        #combined_next_obs = np.concatenate([next_observation, combined_action])
 
-        if terminated:
+        if done:
             # # Ensure coach_reward is initialized no matter the condition
             # if self.previous_episode_reward != 0:
             #     coach_reward = self.current_episode_reward - self.previous_episode_reward
@@ -197,7 +198,7 @@ class InvertedPendulum3DEnvWithCoach(gym.Wrapper):
             self.episode_coach_rewards = []
             #self.episode_coach_reward = 0
 
-        return next_observation, student_reward, terminated, False, info
+        return next_observation, student_reward, terminated, truncated, info
     
     def render(self):
         return self.env.render()
@@ -210,7 +211,7 @@ os.makedirs(model_dir, exist_ok=True)
 os.makedirs(log_dir, exist_ok=True)
 
 # Max episode steps added
-MAX_EPISODE_STEPS = 30000
+MAX_EPISODE_STEPS = 100
 
 
 def train(env, sb3_algo):
@@ -235,7 +236,7 @@ def train(env, sb3_algo):
     # Create seperated environment for model evaluation added
     #eval_env = gym.make('InvertedPendulum3D-v1', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS)
     eval_env = InvertedPendulum3DEnvWithCoach(
-        gym.make('InvertedPendulum3D-v4', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS),
+        gym.make('InvertedPendulum3D-v5', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS),
         coach_agent
     )
 
@@ -263,7 +264,7 @@ def train(env, sb3_algo):
             return
 
     print("Model initialized", flush=True)
-    TIMESTEPS = 100000 
+    TIMESTEPS = 1000 
     iters = 0
 
     plt.ion()
@@ -461,7 +462,7 @@ if __name__ == '__main__':
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         run_name = f"{args.sb3_algo}_{timestamp}"
 
-        base_env = gym.make('InvertedPendulum3D-v4', render_mode=None)
+        base_env = gym.make('InvertedPendulum3D-v5', render_mode=None)
         check_env(base_env)
 
         # Create a coach agent
@@ -476,7 +477,7 @@ if __name__ == '__main__':
         if os.path.isfile(args.test):
             #gymenv = gym.make('InvertedPendulum3DWithCoach-v1', render_mode='human', max_episode_steps=MAX_EPISODE_STEPS)
             #gymenv = gym.make('InvertedPendulum3DWithCoach-v1', render_mode='human')
-            test_env = gym.make('InvertedPendulum3D-v4', render_mode='human')
+            test_env = gym.make('InvertedPendulum3D-v5', render_mode='human')
             check_env(test_env)
             #gymenv = InvertedPendulum3DEnvWithCoach(base_env, coach_agent, render_mode='human')
             # Unwrap the environment if it's wrapped with any wrapper like TimeLimit, OrderEnforcing, or PassiveEnvChecker

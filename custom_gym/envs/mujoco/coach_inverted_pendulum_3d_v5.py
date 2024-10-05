@@ -97,7 +97,7 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
 
         self._reset_noise_scale = reset_noise_scale
         self.step_count = 0  # Initialize step_count here
-        self.max_steps = 3000  # Add this line to define max_steps
+        self.max_steps = 50  # Add this line to define max_steps
         #self.dt = 0.02
 
         MujocoEnv.__init__(
@@ -191,7 +191,12 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         )
         
         # Limit on number of steps
-        #truncated = self.step_count >= self.max_steps
+        if self.step_count >= self.max_steps:
+            truncated = True
+        else:
+            truncated = False
+
+        #print(f"Terminated in student class: {terminated}, Truncated in student class: {truncated}")
 
         #done = terminated or truncated
 
@@ -200,13 +205,14 @@ class InvertedPendulum3DEnv(MujocoEnv, utils.EzPickle):
         if self.render_mode == "human":
             self.render()
         
-        return observation, student_reward, terminated, False, info
+        return observation, student_reward, terminated, truncated, info
         
 
     def reset(self, seed=None, options=None):
         # Reset the environment. Returns only the observation for SB3 compatibility
         super().reset(seed=seed)  # Seeding the environment if needed
         obs = self.reset_model()  # Reset the model
+        self.step_count = 0
         info = {}
         return obs, info  # Return only the observation
     
