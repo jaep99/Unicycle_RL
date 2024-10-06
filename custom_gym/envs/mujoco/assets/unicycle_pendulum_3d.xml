@@ -1,5 +1,11 @@
 <mujoco model="Unicycle with Inverted Pendulum">
     <asset>
+        <!-- 
+        Unicycle mesh stl was set to millimeter (wheel diameter = 50.8mm).
+        As MuJoCo standard unit is a meter system recognizd the wheel diameter as 50.8m.
+        Actual diameter of the wheel is 20inches = 50.8cm
+        To change unit from meter to cm, requires a scaling of 0.01 in both x y z.
+        -->
         <mesh name="wheel" file="UNI_WHEEL.stl" scale="0.01 0.01 0.01"/>
         <mesh name="frame" file="UNI_FRAME.stl" scale="0.01 0.01 0.01"/>
         <texture name="checkerboard" type="2d" builtin="checker" rgb1=".2 .3 .4" rgb2=".3 .4 .5" width="512" height="512"/>
@@ -8,7 +14,6 @@
 
     <compiler inertiafromgeom="true"/>
     <option gravity="0 0 -9.81" integrator="RK4" timestep="0.005"/>
-
     <worldbody>
         <geom name="floor" pos="0 0 0" size="12 12 0.01" type="plane" material="checkerboard"/>
         <geom name="floor_goal_right" pos="13.5 0 0" size="1.5 15 0.01" type="plane" rgba="1 0 0 1"/>
