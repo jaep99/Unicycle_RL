@@ -113,7 +113,7 @@ class UnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
         self._reset_noise_scale = reset_noise_scale
         self.max_steps = max_steps
         self.success_count = 0
-        self.required_successes = 100
+        self.required_successes = 10000
         self.goal_distance = 12.0  # 12 meters goal
         self.prev_x = 0
         self.goal_reached = False
@@ -207,7 +207,7 @@ class UnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
             abs(pendulum_roll) > np.pi/3 or
             abs(pendulum_pitch) > np.pi/3 or
             self.goal_reached or
-            self.success_count >= 1000
+            self.success_count >= self.required_successes # 10,000 times
         )
         
         truncated = bool(self.steps >= self.max_steps)
