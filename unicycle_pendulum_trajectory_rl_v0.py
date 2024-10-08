@@ -19,7 +19,15 @@ os.makedirs(log_dir, exist_ok=True)
 
 # Maximum number of steps per episode
 MAX_EPISODE_STEPS = 10000
+"""
+## Student agent training code for the Unicycle Project.
+## Creating the ideal solution model will be done in this code.
 
+** Code Summary **
+    - unicycle_pendulum_trajectory_rl_v0.py (training)
+    - unicycle_pendulum_trajectory_3d_v0.py (environment)
+    - no_solution_unicycle_wrapper.py
+"""
 class UnicyclePositionLogger(BaseCallback):
     def __init__(self, best_model_path, verbose=0):
         super(UnicyclePositionLogger, self).__init__(verbose)

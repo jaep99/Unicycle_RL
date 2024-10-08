@@ -104,8 +104,10 @@ class SolutionUnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
         **kwargs,
     ):
         if xml_file is None:
-            xml_file = os.path.join(os.path.dirname(__file__), "assets", "unicycle_pendulum_3d.xml")
-        
+            #xml_file = os.path.join(os.path.dirname(__file__), "assets", "unicycle_pendulum_3d.xml")
+            #xml_file = os.path.join(os.path.dirname(__file__), "assets", "unicycle_pendulum_3d_(pendulum_size_increased).xml")
+            xml_file = os.path.join(os.path.dirname(__file__), "assets", "unicycle_pendulum_3d_(sphere_size_increased).xml")
+    
         utils.EzPickle.__init__(self, xml_file, frame_skip, reset_noise_scale, max_steps, **kwargs)
         
         observation_space = Box(low=-np.inf, high=np.inf, shape=(22,), dtype=np.float64)
