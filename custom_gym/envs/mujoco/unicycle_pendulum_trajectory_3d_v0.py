@@ -114,6 +114,7 @@ class UnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
         # Set environment parameters
         self._reset_noise_scale = reset_noise_scale
         self.max_steps = max_steps
+        self.total_episodes = 0
         self.success_count = 0
         self.required_successes = 10000
         self.goal_distance = 12.0  # 12 meters goal
@@ -250,6 +251,7 @@ class UnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
             "goal_reached": self.goal_reached,
             "steps": self.steps,
             "success_count": self.success_count,
+            "total_episodes": self.total_episodes,
             "strict_mode": self.strict_mode,
             "reward": reward,
         }
@@ -272,6 +274,7 @@ class UnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
         self.steps = 0
         self.prev_x = 0
         self.goal_reached = False
+        self.total_episodes += 1
         
         return self._get_obs()
 
