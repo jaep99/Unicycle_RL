@@ -11,6 +11,11 @@ register(
 )
 
 register(
+    id='InvertedPendulum3D-v1-newplot',
+    entry_point='custom_gym.envs.mujoco.inverted_pendulum_3d_v1_newplot:InvertedPendulum3DEnv',
+)
+
+register(
     id='InvertedPendulum3D-v2',
     entry_point='custom_gym.envs.mujoco.inverted_pendulum_3d_v2:InvertedPendulum3DEnv',
 )
