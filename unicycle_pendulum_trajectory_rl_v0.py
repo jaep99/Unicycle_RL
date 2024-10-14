@@ -245,7 +245,8 @@ def train(env):
             threshold_index += 1
 
         # Check if we've reached all thresholds
-        if threshold_index >= len(SUCCESS_THRESHOLDS):
+        # 10000 success MAX
+        if current_success_count >= SUCCESS_THRESHOLDS[-1]:
             end_time = time.time()
             training_time = end_time - start_time
             print(f"\nTraining completed! All success thresholds achieved.")
