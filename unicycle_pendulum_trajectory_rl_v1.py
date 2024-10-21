@@ -18,18 +18,18 @@ os.makedirs(log_dir, exist_ok=True)
 
 """
 ## Student agent training code for the Unicycle Project.
-## Student training model comparison will be done to varify how many successes need to be trained ideally.
+## Creating the ideal solution model will be done in this code.
 
 ** Code Summary **
-    - unicycle_pendulum_trajectory_rl_v0.py (training)
+    - unicycle_pendulum_trajectory_rl_v1.py (training)
     - unicycle_pendulum_trajectory_3d_v0.py (environment)
 """
 
 # Maximum number of steps per episode
 MAX_EPISODE_STEPS = 10000
 
-# Success thresholds for model evaluation and saving
-SUCCESS_THRESHOLDS = [100, 1000, 10000]
+# Success thresholds for model evaluation and saving: 1000 (ideal)
+SUCCESS_THRESHOLDS = [1000]
 
 class UnicyclePositionLogger(BaseCallback):
     """
@@ -238,14 +238,16 @@ def train(env):
         if total_episodes % 100 == 0:
             unicycle_logger.plot_progress()
 
+        """
         # Check if we've reached the next success threshold
         if current_success_count >= SUCCESS_THRESHOLDS[threshold_index]:
             print(f"\nReached {SUCCESS_THRESHOLDS[threshold_index]} successes!")
             model.save(f"{best_model_path}/model_{SUCCESS_THRESHOLDS[threshold_index]}_successes")
             threshold_index += 1
+        """
 
-        # Check if we've reached all thresholds
-        # 10000 success MAX
+        # Check if we've reached threshold (1000)
+        # 1000 success MAX
         if current_success_count >= SUCCESS_THRESHOLDS[-1]:
             end_time = time.time()
             training_time = end_time - start_time
