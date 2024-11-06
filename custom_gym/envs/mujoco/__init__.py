@@ -98,3 +98,13 @@ register(
     id='SolutionUnicyclePendulumTrajectory-v1',
     entry_point='custom_gym.envs.mujoco.solution_unicycle_pendulum_trajectory_3d_v1:SolutionUnicyclePendulumTrajectory',
 )
+
+register(
+    id='SolutionCoachUnicyclePendulumTrajectory-v0',
+    entry_point='custom_gym.envs.mujoco.solution_coach_unicycle_pendulum_trajectory_3d_v0:SolutionUnicyclePendulumTrajectory',
+)
+
+register(
+    id='SolutionCoachUnicyclePendulumTrajectory-v0-forcomparison',
+    entry_point='custom_gym.envs.mujoco.solution_coach_unicycle_pendulum_trajectory_3d_v0_forcomparison:SolutionUnicyclePendulumTrajectory',
+)

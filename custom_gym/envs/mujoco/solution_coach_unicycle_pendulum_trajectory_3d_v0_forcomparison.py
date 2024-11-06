@@ -100,7 +100,7 @@ class SolutionUnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
         frame_skip: int = 2,
         default_camera_config: Dict[str, Union[float, int, np.ndarray]] = DEFAULT_CAMERA_CONFIG,
         reset_noise_scale: float = 0.01,
-        max_steps: int = 1000,
+        max_steps: int = 10000,
         **kwargs,
     ):
         if xml_file is None:
@@ -209,7 +209,7 @@ class SolutionUnicyclePendulumTrajectory(MujocoEnv, utils.EzPickle):
             abs(pendulum_roll) > np.pi/3 or
             abs(pendulum_pitch) > np.pi/3 or
             self.goal_reached or
-            self.success_count >= 100
+            self.success_count >= 1000
         )
         
         truncated = bool(self.steps >= self.max_steps)

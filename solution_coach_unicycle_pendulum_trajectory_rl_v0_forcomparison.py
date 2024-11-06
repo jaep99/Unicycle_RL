@@ -9,8 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation
 import time
-from solution_coach_unicycle_wrapper import SolutionWrapper
-from stable_baselines3.common.monitor import Monitor
+from solution_coach_unicycle_wrapper_forcomparison import SolutionWrapper
 
 # Create directories to hold models and logs
 model_dir = "models"
@@ -19,7 +18,7 @@ os.makedirs(model_dir, exist_ok=True)
 os.makedirs(log_dir, exist_ok=True)
 
 # Maximum number of steps per episode
-MAX_EPISODE_STEPS = 1000
+MAX_EPISODE_STEPS = 10000
 
 class UnicyclePositionLogger(BaseCallback):
     def __init__(self, best_model_path, verbose=0):
@@ -31,8 +30,6 @@ class UnicyclePositionLogger(BaseCallback):
         self.timesteps = []
         self.success_timesteps = []
         self.success_counts = []
-        self.student_rewards = []
-        self.coach_rewards = []
         self.total_successes = 0
 
     def _on_step(self) -> bool:
@@ -44,13 +41,6 @@ class UnicyclePositionLogger(BaseCallback):
         self.solution_actions.append(info.get('solution_action', [0, 0, 0]))
         
         self.timesteps.append(self.num_timesteps)
-        print("Timesteps: ", self.num_timesteps)
-
-        # Track student and coach rewards
-        student_reward = info.get('student_reward', 0)
-        coach_reward = info.get('combined_reward', 0)
-        self.student_rewards.append(student_reward)
-        self.coach_rewards.append(coach_reward)
         
         if info.get('goal_reached', False):
             self.total_successes += 1
@@ -60,7 +50,7 @@ class UnicyclePositionLogger(BaseCallback):
         return True
 
 def plot_unicycle_position(logger, run_name, iteration):
-    fig = plt.figure(figsize=(22, 40))
+    fig = plt.figure(figsize=(20, 30))
     
     action_names = [
         "Wheel Torque",
@@ -69,7 +59,7 @@ def plot_unicycle_position(logger, run_name, iteration):
     ]
     
     # 3D plot
-    ax = fig.add_subplot(621, projection='3d')
+    ax = fig.add_subplot(421, projection='3d')
     positions = np.array(logger.unicycle_positions)
     ax.plot(positions[:, 0], positions[:, 1], positions[:, 2])
     ax.set_title(f'Unicycle 3D Movement (Iteration {iteration})')
@@ -79,7 +69,7 @@ def plot_unicycle_position(logger, run_name, iteration):
     ax.set_xlim(0, 12)  # Set x-axis limit to 0-12 meters
     
     # Top-down view
-    ax = fig.add_subplot(622)
+    ax = fig.add_subplot(422)
     ax.plot(positions[:, 0], positions[:, 1])
     ax.set_title(f'Unicycle Movement (Top-down view, Iteration {iteration})')
     ax.set_xlabel('X Position')
@@ -90,7 +80,7 @@ def plot_unicycle_position(logger, run_name, iteration):
     # Student's actions
     student_actions = np.array(logger.student_actions)
     for i in range(3):
-        ax = fig.add_subplot(623 + i)
+        ax = fig.add_subplot(423 + i)
         ax.plot(logger.timesteps, student_actions[:, i])
         ax.set_title(f'Student Action: {action_names[i]}')
         ax.set_xlabel('Timesteps')
@@ -100,7 +90,7 @@ def plot_unicycle_position(logger, run_name, iteration):
     # Solution's actions
     solution_actions = np.array(logger.solution_actions)
     for i in range(3):
-        ax = fig.add_subplot(626 + i)
+        ax = fig.add_subplot(426 + i)
         ax.plot(logger.timesteps, solution_actions[:, i])
         ax.set_title(f'Solution Action: {action_names[i]}')
         ax.set_xlabel('Timesteps')
@@ -108,28 +98,12 @@ def plot_unicycle_position(logger, run_name, iteration):
         ax.set_ylim(-1, 1)
 
     # Success count
-    ax = fig.add_subplot(6,2,9)
+    ax = fig.add_subplot(4,2,8)
     ax.scatter(logger.success_timesteps, logger.success_counts, color='red', marker='o')
     ax.set_title('Cumulative Success Count')
     ax.set_xlabel('Timesteps')
     ax.set_ylabel('Number of Successes')
     ax.grid(True)
-
-    # Student rewards
-    ax = fig.add_subplot(6,2,10)
-    ax.plot(logger.timesteps, logger.student_rewards)
-    ax.set_title('Student Rewards')
-    ax.set_xlabel('Timesteps')
-    ax.set_ylabel('Reward')
-    #ax.set_xlim([0, max_timestep])
-
-    # Coach rewards
-    ax = fig.add_subplot(6,2,11)
-    ax.plot(logger.timesteps, logger.coach_rewards)
-    ax.set_title('Coach Rewards')
-    ax.set_xlabel('Timesteps')
-    ax.set_ylabel('Reward')
-    #ax.set_xlim([0, max_timestep])
 
     # Ensure all plots have the same x-axis range for timestep-based plots
     max_timestep = max(logger.timesteps)
@@ -145,12 +119,12 @@ def plot_unicycle_position(logger, run_name, iteration):
 
 def train(env):
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_name = f"SAC_withcoach_{timestamp}"
+    run_name = f"SAC_no_coach_{timestamp}"
     
     best_model_path = f"{model_dir}/best_{run_name}"
     os.makedirs(best_model_path, exist_ok=True)
     
-    eval_env = Monitor(SolutionWrapper(gym.make('SolutionCoachUnicyclePendulumTrajectory-v0', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS)))
+    eval_env = SolutionWrapper(gym.make('SolutionCoachUnicyclePendulumTrajectory-v0-forcomparison', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS))
     
     eval_callback = EvalCallback(
         eval_env, 
@@ -169,37 +143,21 @@ def train(env):
 
     total_timesteps = 0
     total_simulation_time = 0
-    #timestep_duration = env.env.dt
-    #timestep_duration = env.get_attr('dt')[0]
-    #timestep_duration = env.envs[0].unwrapped.dt
-    timestep_duration = env.unwrapped.dt
+    timestep_duration = env.env.dt
     start_time = time.time()
     prev_success_count = 0
 
-    iteration = 0
-
     while True:
-        print("model learn starting....")
-        model.learn(total_timesteps=1000, reset_num_timesteps=False, tb_log_name=run_name, callback=callbacks)
-        print("model learn finished!!!")
-        total_timesteps += 1000
-        iteration += 1
+        model.learn(total_timesteps=10000, reset_num_timesteps=False, tb_log_name=run_name, callback=callbacks)
+        total_timesteps += 10000
 
         total_simulation_time = total_timesteps * timestep_duration
         
-        #current_success_count = env.env.success_count  # Access the unwrapped environment
-        #current_success_count = env.get_attr('success_count')[0]
-        current_success_count = env.unwrapped.success_count
+        current_success_count = env.env.success_count  # Access the unwrapped environment
         new_successes = current_success_count - prev_success_count
         
         print(f"Total timesteps: {total_timesteps}, Total Successes: {current_success_count}, New Successes: {new_successes}")
         
-        plot_unicycle_position(unicycle_logger, run_name, iteration)
-
-        # Log every 10 iterations
-        if iteration % 10 == 0:
-            print(f"Iteration {iteration} completed with {total_timesteps} timesteps.")
-
         if new_successes > 0:
             print(f"Goal reached! New success count: {new_successes}")
         
@@ -216,7 +174,7 @@ def train(env):
 
     model.save(f"{model_dir}/{run_name}_final")
 
-    #plot_unicycle_position(unicycle_logger, run_name, total_timesteps // 10000)
+    plot_unicycle_position(unicycle_logger, run_name, total_timesteps // 10000)
 
 def test(env, path_to_model):
     model = SAC.load(path_to_model, env=env)
@@ -273,14 +231,14 @@ if __name__ == '__main__':
     parser.add_argument('-test', '--test', metavar='path_to_model')
     args = parser.parse_args()
 
-    gymenv = SolutionWrapper(gym.make('SolutionCoachUnicyclePendulumTrajectory-v0', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS))
+    gymenv = SolutionWrapper(gym.make('SolutionCoachUnicyclePendulumTrajectory-v0-forcomparison', render_mode=None, max_episode_steps=MAX_EPISODE_STEPS))
 
     if args.train:
         train(gymenv)
 
     if args.test:
         if os.path.isfile(args.test):
-            test_env = SolutionWrapper(gym.make('SolutionCoachUnicyclePendulumTrajectory-v0', render_mode='human', max_episode_steps=MAX_EPISODE_STEPS))
+            test_env = SolutionWrapper(gym.make('SolutionCoachUnicyclePendulumTrajectory-v0-forcomparison', render_mode='human', max_episode_steps=MAX_EPISODE_STEPS))
             test(test_env, path_to_model=args.test)
         else:
             print(f'{args.test} not found.')
